@@ -309,3 +309,25 @@ test('conta sem acesso de conteúdo não impede baixar o mesmo arquivo público'
   assert.equal(await (await fetch(media, { headers: { Cookie: cookie } })).text(), 'original public file');
   assert.equal(calls, 2);
 });
+
+test('rede local transmite arquivos públicos e não reutiliza autorização privada de loopback', async t => {
+  let calls = 0;
+  const { base, media } = await setup(t, async (url, options) => {
+    calls++;
+    assert.equal(url.hostname, 'drive.google.com');
+    assert.equal(options.headers.get('authorization'), null);
+    return new Response('public original', { headers: { 'Content-Type': 'video/mp4' } });
+  });
+  const cookie = await authorize(base);
+  const headers = { Host: `192.168.1.20:${new URL(base).port}`, Cookie: cookie };
+  const result = await new Promise((resolve, reject) => {
+    get(media, { headers }, response => {
+      const chunks = [];
+      response.on('data', chunk => chunks.push(chunk));
+      response.on('end', () => resolve({ status: response.statusCode, body: Buffer.concat(chunks).toString() }));
+    }).on('error', reject);
+  });
+  assert.deepEqual(result, { status: 200, body: 'public original' });
+  assert.equal(calls, 1);
+  assert.equal(await rawStatus(`${base}/api/drive/session`, headers), 403);
+});

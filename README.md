@@ -1,6 +1,6 @@
 # Muvies
 
-Um player web em português para organizar e assistir aos vídeos do Google Drive. Interface escura, filtros por gênero acima do player, lista pesquisável, cartões da biblioteca e layout responsivo.
+Um player web em português para organizar e assistir aos vídeos do Google Drive. Tela simples com o player, filtros por gênero e lista pesquisável acima dele. Os links ficam salvos no próprio aplicativo e são compartilhados pelos aparelhos da rede local. A biblioteca começa vazia, sem vídeos de demonstração.
 
 ## Desenvolvimento
 
@@ -13,14 +13,14 @@ npm ci
 npm run dev -- --port 5173 --strictPort
 ```
 
-O servidor escuta somente na interface local `127.0.0.1`, na porta 5173. A aplicação usa React + TypeScript + Vite, com um pequeno servidor local de transmissão integrado ao Vite. Não precisa instalar outro serviço ou banco de dados. Mantenha o terminal aberto durante a reprodução. A interface pode ser aberta usando `localhost` ou `127.0.0.1`; cadastre no Google a origem exata que você usar.
+O servidor escuta na porta 5173, incluindo as interfaces da rede local (`0.0.0.0`). A aplicação usa React + TypeScript + Vite, com um pequeno servidor local de transmissão integrado ao Vite. Não precisa instalar outro serviço ou banco de dados. Mantenha o terminal aberto durante a reprodução. A interface pode ser aberta usando `localhost` ou `127.0.0.1`; cadastre no Google a origem exata que você usar.
 
 ```sh
 npm run build  # TypeScript e bundle de produção em dist/
 npm test       # Testes do servidor local e testes de navegador com Playwright
 ```
 
-Em Linux, os testes usam o Chromium distribuído no pacote npm `@sparticuz/chromium`, sem download adicional do navegador. Em macOS/Windows, execute `npx playwright install chromium` antes dos testes. Os testes cobrem filtros e busca, links inválidos, duplicatas, persistência, edição e remoção, layout móvel, navegação por teclado, importação com API Google simulada e reprodução real das amostras locais. Há testes de reprodução HTML5 usando bytes reais de uma amostra, alternância de players, erros de autorização, sessões isoladas e expiradas, streaming com Range/206, cancelamento de downloads e restrições de origem. O Google é simulado nos testes de integração: a suíte não valida o login nem o acesso a uma conta Google real.
+Em Linux, os testes usam o Chromium distribuído no pacote npm `@sparticuz/chromium`, sem download adicional do navegador. Em macOS/Windows, execute `npx playwright install chromium` antes dos testes. Os testes cobrem filtros e busca, links inválidos, duplicatas, persistência, edição e remoção, layout móvel, navegação por teclado, importação com API Google simulada e reprodução de um arquivo real usado apenas como fixture de teste, sem incluí-lo na interface. Há testes de reprodução HTML5 usando bytes reais de uma amostra, alternância de players, erros de autorização, sessões isoladas e expiradas, streaming com Range/206, cancelamento de downloads e restrições de origem. O Google é simulado nos testes de integração: a suíte não valida o login nem o acesso a uma conta Google real.
 
 ## Usar seus vídeos
 
@@ -37,15 +37,27 @@ O arquivo é transmitido em fluxo, com suporte a pedidos de trechos (`Range` e r
 
 O modo direto não usa a prévia convertida do player do Drive. Se o arquivo original já estiver disponível para download e tiver codecs compatíveis com o navegador, pode reproduzir mesmo quando a prévia do Google ainda está em processamento. MP4 com vídeo H.264 e áudio AAC é uma opção amplamente compatível. Alguns arquivos MKV, AVI, HEVC ou com áudio incompatível precisam de conversão ou de um player local como o VLC; o Muvies não converte vídeos.
 
-**Rodar localmente não significa funcionar offline:** os arquivos que estão no Drive ainda precisam de internet para chegar ao seu computador. As duas amostras incluídas no projeto são locais e não dependem do Drive.
+**Rodar localmente não significa funcionar offline:** os arquivos que estão no Drive ainda precisam de internet para chegar ao seu computador. A aplicação não inclui vídeos de demonstração; somente uma fixture pequena de vídeo fica na pasta de testes.
 
 O modo alternativo **Player do Drive** continua usando a incorporação do Google, com suas próprias regras de processamento, sessão e cookies. O botão **Abrir no Drive** abre o arquivo diretamente no Google. Links que contêm `resourcekey` preservam essa chave de compartilhamento em ambos os modos.
 
-A biblioteca e o Client ID público ficam no `localStorage` deste navegador. Não há sincronização automática entre aparelhos. Remover um cartão não exclui o arquivo no Drive. As duas amostras locais são identificadas como demonstrações e não pertencem ao seu Drive.
+### Lista salva no aplicativo e compartilhada na rede
+
+Cada link adicionado, título e gênero são gravados em **`.muvies/library.json`**, dentro da pasta do Muvies no computador que executa o servidor. A gravação é confirmada antes de o aplicativo informar que salvou. Fechar o navegador, trocar de aparelho ou reiniciar o servidor não apaga a biblioteca. `npm ci`, builds e atualizações com Git também não removem esse arquivo, que fica fora do controle de versão.
+
+Na primeira abertura, se esse arquivo ainda não existir, o aplicativo importa automaticamente os links da versão anterior guardados no navegador que estiver acessando. Depois disso, o arquivo é a fonte da lista compartilhada; um arquivo de biblioteca intencionalmente vazio permanece vazio. A seleção do último vídeo e o Client ID público podem continuar como preferências locais do navegador.
+
+As telas abertas consultam a mesma biblioteca a cada três segundos e ao retornar para a janela. Duas pessoas salvando ao mesmo tempo não sobrescrevem silenciosamente as alterações uma da outra: a lista é atualizada e a pessoa pode conferir e tentar novamente. Remover um link só o remove da lista; o arquivo continua no Drive. Para transferir ou fazer backup da biblioteca, copie `.muvies/library.json` com o aplicativo parado. Opcionalmente, a variável `MUVIES_LIBRARY_DIR` define outro diretório de dados; o padrão continua sendo `.muvies` dentro da pasta do aplicativo.
+
+### Acessar de outros aparelhos
+
+Mantenha o Muvies aberto no computador servidor. Nos outros aparelhos da mesma rede, use o endereço **Network** mostrado no terminal, com o IP privado desse computador e a porta 5173. Todos acessam a mesma lista e podem adicionar, editar e remover links. Não use o endereço localhost no outro aparelho, porque ele aponta para o próprio aparelho.
+
+O servidor aceita as APIs de biblioteca e reprodução pública em endereços de loopback ou rede privada, com requisições da própria origem. Ele não precisa de um banco de dados. A autorização pessoal do Google não é compartilhada com a rede: a conexão OAuth só pode ser feita por loopback, no computador servidor. Acesso privado ao Drive continua dependendo das permissões do arquivo e da conta, inclusive ao usar o player alternativo ou abrir o Drive diretamente.
 
 ### “Este arquivo de vídeo ainda está sendo processado”
 
-Essa mensagem pertence à prévia do player do Google Drive. Selecione **Reprodução direta** abaixo do player para usar o original pelo servidor local. Esse modo não depende da conversão da prévia, mas exige que o original esteja disponível para download e seja compatível com o navegador.
+Essa mensagem pertence à prévia do player do Google Drive. Selecione **Reprodução direta** acima do player para usar o original pelo servidor local. Esse modo não depende da conversão da prévia, mas exige que o original esteja disponível para download e seja compatível com o navegador.
 
 Se a reprodução direta pedir autorização, use **Conectar Drive**. Quem usava a versão anterior precisa autorizar novamente: o escopo antigo `drive.metadata.readonly` só permitia listar metadados; o novo `drive.readonly` permite ler o conteúdo dos arquivos. Não basta mudar o nome do escopo no Google Cloud sem fazer uma nova autorização.
 
@@ -61,9 +73,9 @@ Se a conta não puder baixar o arquivo, houver limite de downloads ou o original
 4. Cadastre o escopo `https://www.googleapis.com/auth/drive.readonly` na configuração de acesso a dados. Essa permissão dá acesso de leitura ao conteúdo dos arquivos, não somente aos metadados.
 5. No Muvies, clique em **Conectar Drive**, informe o **Client ID** público e continue com o Google. Autorize a nova permissão de leitura mesmo se já usava a versão anterior. Não forneça Client Secret, senha ou token.
 
-O login usa Google Identity Services. O token é enviado pela aplicação ao servidor que roda na sua máquina e fica somente na memória dele, por no máximo uma hora ou até o processo encerrar. Ele não é gravado em disco, no `localStorage`, em URLs do vídeo ou em logs. O navegador recebe apenas um identificador aleatório de sessão em cookie `HttpOnly` e `SameSite=Strict`. A biblioteca e o Client ID público continuam salvos no navegador. Ao reiniciar o servidor ou expirar a autorização, conecte o Drive novamente.
+O login usa Google Identity Services. O token é enviado pela aplicação ao servidor que roda na sua máquina e fica somente na memória dele, por no máximo uma hora ou até o processo encerrar. Ele não é gravado em disco, no `localStorage`, em URLs do vídeo ou em logs. O navegador recebe apenas um identificador aleatório de sessão em cookie `HttpOnly` e `SameSite=Strict`. Os links da biblioteca ficam no arquivo compartilhado do aplicativo; somente o Client ID público e a seleção local ficam no navegador. Ao reiniciar o servidor ou expirar a autorização, conecte o Drive novamente.
 
-A permissão é de leitura: o aplicativo não altera nem exclui arquivos. A importação é paginada e mantém os títulos e gêneros já editados. **Sincronizar Drive** solicita uma nova autorização e atualiza a lista. O acesso do servidor local só aceita hosts de loopback e requisições da mesma origem; ele não funciona como um proxy público de URLs arbitrárias. Não exponha esse servidor pessoal na internet.
+A permissão é de leitura: o aplicativo não altera nem exclui arquivos. A importação é paginada e mantém os títulos e gêneros já editados. **Sincronizar Drive** solicita uma nova autorização e atualiza a lista. A conexão OAuth só aceita loopback. A biblioteca e downloads públicos aceitam também IPs privados da rede e requisições da mesma origem; ele não funciona como um proxy público de URLs arbitrárias. Não exponha esse servidor pessoal na internet.
 
 A integração real depende do seu projeto OAuth e da autorização da sua conta. Ela não foi validada com uma conta real neste ambiente. Apps externos em produção podem exigir verificação do Google conforme o escopo e o público configurados.
 
@@ -76,12 +88,11 @@ npm run preview -- --port 4173 --strictPort
 
 O comando de preview também inclui o servidor de transmissão local. Se usar a conexão Google nessa porta, inclua essa origem na credencial OAuth. Publicar somente `dist/` em uma hospedagem estática não inclui as rotas de streaming: esta versão foi feita para rodar localmente com Node.js e Vite, como servidor pessoal.
 
-Fontes, imagens e amostras de demonstração são locais. A conexão Google usa `accounts.google.com`, `www.googleapis.com` e `www.gstatic.com`. Downloads públicos podem usar `drive.google.com`, `drive.usercontent.google.com` e redirecionamentos para `*.googleusercontent.com`. O player alternativo do Google pode usar também `*.googlevideo.com`. Na nuvem, esses destinos precisam estar liberados nas configurações de rede. Em uma instalação local, valem as regras de rede da sua máquina.
+As fontes e o ícone do aplicativo são locais. A conexão Google usa `accounts.google.com`, `www.googleapis.com` e `www.gstatic.com`. Downloads públicos podem usar `drive.google.com`, `drive.usercontent.google.com` e redirecionamentos para `*.googleusercontent.com`. O player alternativo do Google pode usar também `*.googlevideo.com`. Na nuvem, esses destinos precisam estar liberados nas configurações de rede. Em uma instalação local, valem as regras de rede da sua máquina.
 
 ## Créditos
 
-- **Big Buck Bunny**: © Blender Foundation, [bigbuckbunny.org](https://www.bigbuckbunny.org/), [CC BY 3.0](https://creativecommons.org/licenses/by/3.0/). Amostra de aproximadamente 60 segundos e imagem distribuídas pelo [repositório de mídia do MediaElement](https://github.com/mediaelement/mediaelement-files). A imagem de capa foi extraída da amostra local; apenas redimensionamento e corte visual via CSS.
-- **Flower**: amostra de aproximadamente 5 segundos do [MDN Interactive Examples](https://github.com/mdn/interactive-examples/tree/main/live-examples/media/cc0-videos), domínio público, [CC0](https://creativecommons.org/publicdomain/zero/1.0/). Capa extraída do vídeo.
+- **Fixture de testes (Flower)**: arquivo de aproximadamente 5 segundos em `tests/fixtures/native-video.mp4`, proveniente do [MDN Interactive Examples](https://github.com/mdn/interactive-examples/tree/main/live-examples/media/cc0-videos), domínio público, [CC0](https://creativecommons.org/publicdomain/zero/1.0/). Usado somente pelos testes; não é servido como demonstração do aplicativo.
 - **DM Sans** e **Manrope**: fontes distribuídas via Fontsource sob a SIL Open Font License.
 - Ícones: Lucide, licença ISC.
 

@@ -2,7 +2,7 @@ export type Video = {
   id: string;
   title: string;
   genre: string;
-  source: 'demo' | 'drive';
+  source: 'drive';
   driveId?: string;
   resourceKey?: string;
   url: string;
@@ -10,21 +10,6 @@ export type Video = {
   description?: string;
   duration?: string;
 };
-
-export const demos: Video[] = [
-  {
-    id: 'demo-bunny', title: 'Big Buck Bunny', genre: 'Animação', source: 'demo',
-    url: '/media/big-buck-bunny.mp4',
-    poster: '/media/big-buck-bunny.jpg',
-    duration: '1:00', description: 'Um trecho do curta da Blender Foundation. Amostra de demonstração, CC BY 3.0.',
-  },
-  {
-    id: 'demo-flower', title: 'Um instante na natureza', genre: 'Natureza', source: 'demo',
-    url: '/media/flower.mp4',
-    poster: '/media/flower.jpg',
-    duration: '0:05', description: 'Uma pausa para olhar de perto. Vídeo de demonstração do MDN, domínio público (CC0).',
-  },
-];
 
 const storageKey = 'muvies.library.v1';
 export function getSavedVideos(): Video[] {

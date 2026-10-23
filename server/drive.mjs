@@ -2,6 +2,7 @@ import { randomBytes } from 'node:crypto';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { fetchPublicDriveOriginal, PublicDriveError, videoContentType } from './public-drive.mjs';
+import { appOrigin, isLoopbackRequest } from './local-network.mjs';
 
 const SESSION_COOKIE = 'muvies_drive_session';
 const FILE_ID = /^[\w-]{10,200}$/;
@@ -52,19 +53,19 @@ export function createDriveMiddleware({ fetchImpl = globalThis.fetch, now = Date
   return async function driveMiddleware(req, res, next) {
     if (!req.url?.startsWith('/api/drive/')) return next();
     try {
-      const origin = new URL(`http://${req.headers.host}`);
-      if (!['localhost', '127.0.0.1', '[::1]'].includes(origin.hostname)) {
-        return sendError(res, 403, 'LOCAL_ONLY', 'A reprodução direta está disponível somente no servidor local.');
-      }
+      const origin = appOrigin(req);
+      if (!origin) return sendError(res, 403, 'LOCAL_ONLY', 'Abra o Muvies pelo endereço local ou da sua rede privada.');
+      const loopback = isLoopbackRequest(req);
       if (req.headers['sec-fetch-site'] && !['same-origin', 'none'].includes(req.headers['sec-fetch-site'])) {
         return sendError(res, 403, 'CROSS_ORIGIN', 'Abra o Muvies diretamente no servidor local.');
       }
       const url = new URL(req.url, origin);
       for (const [id, session] of sessions) if (session.expiresAt <= now()) sessions.delete(id);
       const id = cookieId(req);
-      const session = id ? sessions.get(id) : undefined;
+      const session = loopback && id ? sessions.get(id) : undefined;
 
       if (url.pathname === '/api/drive/session') {
+        if (!loopback) return sendError(res, 403, 'OAUTH_LOCAL_ONLY', 'A conexão Google deve ser feita no computador que executa o Muvies.');
         if (req.method === 'GET') return sendJson(res, { connected: !!session, expiresAt: session?.expiresAt || null });
         if (!['POST', 'DELETE'].includes(req.method)) return sendError(res, 405, 'METHOD_NOT_ALLOWED', 'Método não permitido.', { Allow: 'GET, POST, DELETE' });
         if (req.headers.origin !== origin.origin) return sendError(res, 403, 'CROSS_ORIGIN', 'Origem da autorização inválida.');
