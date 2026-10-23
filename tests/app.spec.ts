@@ -114,3 +114,25 @@ test('reprodução real da demonstração e imagens carregadas', async ({ page }
   await expect.poll(async () => page.locator('.video-card img').evaluateAll(images => images.every(image => (image as HTMLImageElement).naturalWidth > 0))).toBe(true);
   await page.locator('video').evaluate(video => (video as HTMLVideoElement).pause());
 });
+
+test('Drive em processamento: oferece diagnóstico e recarrega apenas o player', async ({ page }) => {
+  let requests = 0;
+  await page.route('https://drive.google.com/file/d/1234567890abcdef/preview', async route => {
+    requests++;
+    await route.fulfill({ contentType: 'text/html', body: '<p>Este arquivo de vídeo ainda está sendo processado para reprodução. Tente de novo mais tarde.</p>' });
+  });
+  await page.goto('/');
+  await addDriveVideo(page);
+  const help = page.getByRole('complementary', { name: 'Ajuda com a reprodução do Drive' });
+  await expect(help.getByRole('link', { name: 'Abrir no Drive' })).toHaveAttribute('href', 'https://drive.google.com/file/d/1234567890abcdef/view');
+  await expect(help.getByRole('button', { name: 'Recarregar player' })).toHaveCount(0);
+  await page.getByRole('button', { name: 'Reproduzir Nossa viagem' }).click();
+  await expect.poll(() => requests).toBe(1);
+  await help.getByText('O Drive diz que o vídeo ainda está sendo processado?').click();
+  await expect(help).toContainText('O Muvies não consegue acelerar essa etapa.');
+  await help.getByRole('button', { name: 'Recarregar player' }).click();
+  await expect.poll(() => requests).toBe(2);
+  await expect(page.locator('.video-card')).toHaveCount(3);
+  await expect(page.locator('.now-playing')).toContainText('Vídeo selecionado');
+  await expect(page.locator('.now-playing')).not.toContainText('Você está assistindo');
+});

@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { ArrowRight, Check, ChevronDown, CircleHelp, Clapperboard, Cloud, Film, FolderOpen, Info, Link, ListVideo, LoaderCircle, Maximize, Pencil, Play, Plus, Search, ShieldCheck, Trash2, X } from 'lucide-react';
+import { ArrowRight, Check, ChevronDown, CircleHelp, Clapperboard, Cloud, ExternalLink, Film, FolderOpen, Info, Link, ListVideo, LoaderCircle, Maximize, Pencil, Play, Plus, RefreshCw, Search, ShieldCheck, Trash2, X } from 'lucide-react';
 import { authorizeDrive, demos, getSavedVideos, listDriveVideos, loadGoogleIdentity, parseDriveId, saveVideos, type Video } from './library';
 import './styles.css';
 
@@ -22,6 +22,7 @@ function App() {
   const [tab, setTab] = useState<'all' | 'drive'>('all');
   const [playing, setPlaying] = useState(false);
   const [playerError, setPlayerError] = useState(false);
+  const [driveFrameVersion, setDriveFrameVersion] = useState(0);
   const [dropdown, setDropdown] = useState(false);
   const [search, setSearch] = useState('');
   const [modal, setModal] = useState<Modal>(null);
@@ -143,7 +144,7 @@ function App() {
         </div>
 
         <div className={`player ${playing ? 'is-playing' : ''}`} ref={playerRef}>
-          {active.source === 'demo' ? <video key={active.id} ref={videoRef} src={active.url} poster={active.poster} controls={playing} preload="none" playsInline onError={() => setPlayerError(true)} onEnded={() => setPlaying(false)} aria-label={`Player: ${active.title}`} /> : playing && <iframe key={active.id} src={active.url} title={`Player do Google Drive: ${active.title}`} allow="autoplay; fullscreen; encrypted-media; picture-in-picture" allowFullScreen />}
+          {active.source === 'demo' ? <video key={active.id} ref={videoRef} src={active.url} poster={active.poster} controls={playing} preload="none" playsInline onError={() => setPlayerError(true)} onEnded={() => setPlaying(false)} aria-label={`Player: ${active.title}`} /> : playing && <iframe key={`${active.id}-${driveFrameVersion}`} src={active.url} title={`Player do Google Drive: ${active.title}`} allow="autoplay; fullscreen; encrypted-media; picture-in-picture" allowFullScreen />}
           {!playing && <div className={`player-cover ${active.source === 'drive' ? 'drive-cover' : ''}`}>
             <div className="player-top"><span className="player-label"><span/> {active.source === 'drive' ? 'DO SEU GOOGLE DRIVE' : 'SESSÃO DE DEMONSTRAÇÃO'}</span><span className="quality-label">{active.source === 'drive' ? <DriveIcon size={17}/> : active.id === 'demo-bunny' ? 'BLENDER OPEN MOVIE' : 'UM RESPIRO NA ROTINA'}</span></div>
             <button className="big-play" aria-label={`Reproduzir ${active.title}`} onClick={startPlayback}><Play size={27} fill="currentColor" strokeWidth={0}/></button>
@@ -151,8 +152,15 @@ function App() {
           </div>}
           {playerError && <div className="player-error"><Info size={24}/><strong>Não foi possível carregar o vídeo.</strong><p>Verifique sua conexão e tente novamente.</p><button className="button secondary" onClick={() => { videoRef.current?.load(); startPlayback(); }}>Tentar novamente</button></div>}
         </div>
-        <div className="now-playing"><div><span className="playing-indicator"><i/><i/><i/></span><span>Você está assistindo</span><strong>{active.title}</strong></div><span className="source-badge">{active.source === 'drive' ? <><DriveIcon size={14}/> Google Drive</> : <><Film size={14}/> Vídeo de demonstração</>}</span></div>
-        {active.source === 'drive' && <p className="drive-playback-note"><Info size={14}/>Para vídeos privados, entre na conta Google com acesso ao arquivo. Se o player pedir login, <a href={`https://drive.google.com/file/d/${active.driveId}/view`} target="_blank" rel="noreferrer">abra no Drive<ArrowRight size={12}/></a>.</p>}
+        <div className="now-playing"><div><span className="playing-indicator"><i/><i/><i/></span><span>{active.source === 'drive' || !playing ? 'Vídeo selecionado' : 'Você está assistindo'}</span><strong>{active.title}</strong></div><span className="source-badge">{active.source === 'drive' ? <><DriveIcon size={14}/> Google Drive</> : <><Film size={14}/> Vídeo de demonstração</>}</span></div>
+        {active.source === 'drive' && <aside className="drive-playback-help" aria-label="Ajuda com a reprodução do Drive">
+          <div className="drive-help-heading"><Info size={17}/><div><strong>O vídeo não começou?</strong><p>Para vídeos privados, use a conta Google com acesso ao arquivo.</p></div></div>
+          <div className="drive-help-actions">
+            {playing && <button className="button secondary" onClick={() => setDriveFrameVersion(version => version + 1)}><RefreshCw size={14}/>Recarregar player</button>}
+            <a className="button secondary" href={`https://drive.google.com/file/d/${active.driveId}/view`} target="_blank" rel="noreferrer">Abrir no Drive<ExternalLink size={14}/></a>
+          </div>
+          <details className="drive-processing-help"><summary>O Drive diz que o vídeo ainda está sendo processado?</summary><p>Abra o arquivo no Drive para conferir. Se a mesma mensagem aparecer lá, aguarde o processamento do Google e tente novamente. O Muvies não consegue acelerar essa etapa.</p><p>Se o vídeo já reproduz no Drive, confira se o navegador permite cookies do Google, entre na mesma conta e use <strong>Recarregar player</strong>. Se necessário, assista diretamente no Drive.</p><p>Se precisar assistir antes do processamento terminar, tente baixar o arquivo pelo próprio Drive e abri-lo em um player local, como o VLC, desde que você tenha permissão para download.</p></details>
+        </aside>}
       </section>
 
       <section className="collection" aria-labelledby="collection-title"><div className="section-heading"><div><h2 id="collection-title">{tab === 'drive' ? 'Do seu Drive' : genre === 'Todos' ? 'Na sua biblioteca' : genre}<span>{filtered.length}</span></h2><p>{tab === 'drive' ? 'Seus arquivos, organizados em um só lugar.' : 'Escolha uma história e fique à vontade.'}</p></div><span className="collection-detail"><span/> Tudo pronto para o play</span></div>

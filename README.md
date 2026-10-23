@@ -33,6 +33,15 @@ Vídeos compartilhados mantêm suas permissões originais. Para vídeos privados
 
 A biblioteca e o Client ID público ficam no `localStorage` deste navegador. Não há sincronização automática entre aparelhos. Remover um cartão não exclui o arquivo no Drive. As duas amostras locais são identificadas como demonstrações e não pertencem ao seu Drive.
 
+### “Este arquivo de vídeo ainda está sendo processado”
+
+Essa mensagem é exibida pelo player do Google Drive. O Muvies incorpora esse player e não controla nem acelera o processamento do Google. Também não consegue ler mensagens de erro dentro do player, porque ele pertence a outra origem.
+
+1. Use **Abrir no Drive**, abaixo do player, para verificar o mesmo arquivo com sua conta conectada.
+2. Se a mensagem também aparecer no Drive, aguarde o processamento e tente novamente. Se você tiver permissão para baixar, pode tentar abrir o arquivo original em um player local como o VLC enquanto aguarda. Isso não altera o processamento do Google.
+3. Se o vídeo reproduzir diretamente no Drive, confirme a conta com acesso, verifique as permissões de cookies do Google e use **Recarregar player** no Muvies. A opção recarrega apenas o player, sem perder a biblioteca; ela não força o processamento do vídeo.
+4. Se o problema persistir no próprio Drive, verifique o formato e a integridade do arquivo. Ter a extensão `.mp4` não garante que os codecs internos sejam compatíveis; MP4 com H.264 e áudio AAC é uma opção amplamente compatível. O aplicativo não converte arquivos automaticamente.
+
 ## Conectar a conta Google
 
 Adicionar links funciona sem configurar uma integração OAuth. Para importar automaticamente a lista dos seus vídeos privados ou compartilhados:
