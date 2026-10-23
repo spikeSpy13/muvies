@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { flushSync } from 'react-dom';
 import { ArrowLeft, Captions, Check, ChevronDown, CircleHelp, ExternalLink, Film, Info, Link, ListVideo, LoaderCircle, Maximize, Pencil, Play, Plus, RefreshCw, Search, ShieldCheck, Trash2, Upload, X } from 'lucide-react';
@@ -7,6 +7,7 @@ import { LibraryError, readLibrary, writeLibrary, type LibrarySnapshot } from '.
 import { useSubtitles } from './subtitles';
 import './styles.css';
 import { Catalog, filmUrl } from './Catalog';
+import { ArtworkFields, useArtworkDraft } from './ArtworkFields';
 
 type Modal = 'add' | 'help' | 'edit' | null;
 const baseGenres = ['Animação', 'Aventura', 'Fantasia', 'Ação', 'Comédia', 'Documentário', 'Drama', 'Terror'];
@@ -54,6 +55,7 @@ function App() {
   const [director, setDirector] = useState('');
   const [year, setYear] = useState('');
   const [description, setDescription] = useState('');
+  const artwork = useArtworkDraft();
   const [editing, setEditing] = useState<string | null>(null);
   const [error, setError] = useState('');
   const [toast, setToast] = useState('');
@@ -75,7 +77,7 @@ function App() {
   const currentGenre = genres.includes(genre) ? genre : 'Todos';
   const filtered = saved.filter(video => currentGenre === 'Todos' || video.genre === currentGenre);
   const options = filtered.filter(video => video.title.toLocaleLowerCase('pt-BR').includes(search.toLocaleLowerCase('pt-BR')));
-  const locked = saving;
+  const locked = saving || artwork.validating;
 
   function applySnapshot(snapshot: LibrarySnapshot) {
     const previousId = activeIdRef.current;
@@ -240,16 +242,17 @@ function App() {
     document.addEventListener('click', close);
     return () => document.removeEventListener('click', close);
   }, []);
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (modal) modalRef.current?.showModal(); else modalRef.current?.close();
     setError('');
   }, [modal]);
 
-  async function persist(videos: Video[]): Promise<boolean> {
+  async function persist(videos: Video[] | (() => Promise<Video[]>)): Promise<boolean> {
     if (!libraryReady || savingRef.current) return false;
     savingRef.current = true; setSaving(true); setError('');
     try {
-      applySnapshot(await writeLibrary(videos, revision.current));
+      const prepared = typeof videos === 'function' ? await videos() : videos;
+      applySnapshot(await writeLibrary(prepared, revision.current));
       setStorageProblem('');
       return true;
     } catch (error) {
@@ -263,8 +266,8 @@ function App() {
     } finally { savingRef.current = false; setSaving(false); }
   }
   function changePlaybackMode(mode: 'direct' | 'drive') { stopPlayback(); setPlaybackMode(mode); }
-  function openAdd() { setTitle(''); setUrl(''); setNewGenre('Sem gênero'); setDirector(''); setYear(''); setDescription(''); setEditing(null); setModal('add'); }
-  function openEdit(video: Video) { setEditing(video.id); setTitle(video.title); setNewGenre(video.genre); setDirector(video.director || ''); setYear(video.year || ''); setDescription(video.description || ''); setModal('edit'); }
+  function openAdd() { artwork.reset(); setTitle(''); setUrl(''); setNewGenre('Sem gênero'); setDirector(''); setYear(''); setDescription(''); setEditing(null); setModal('add'); }
+  function openEdit(video: Video) { artwork.reset(video); setEditing(video.id); setTitle(video.title); setNewGenre(video.genre); setDirector(video.director || ''); setYear(video.year || ''); setDescription(video.description || ''); setModal('edit'); }
   async function addVideo(event: React.FormEvent) {
     event.preventDefault();
     const driveId = parseDriveId(url);
@@ -274,19 +277,27 @@ function App() {
     const currentVideos = savedRef.current;
     const duplicate = currentVideos.find(video => video.driveId === driveId);
     if (duplicate) {
-      const updated = resourceKey ? { ...duplicate, resourceKey } : duplicate;
-      if (resourceKey && !await persist(currentVideos.map(video => video.id === duplicate.id ? updated : video))) return;
+      let updated = resourceKey ? { ...duplicate, resourceKey } : duplicate;
+      if ((resourceKey || artwork.changed) && !await persist(async () => {
+        if (artwork.changed) updated = { ...updated, ...await artwork.upload(updated) };
+        return savedRef.current.map(video => video.id === duplicate.id ? updated : video);
+      })) return;
       choose(updated); setGenre('Todos'); setModal(null);
-      setToast(resourceKey ? 'Link compartilhado atualizado e salvo.' : 'Este vídeo já está na sua lista.');
+      setToast(resourceKey || artwork.changed ? 'Filme atualizado e salvo no aplicativo.' : 'Este vídeo já está na sua lista.');
       return;
     }
     const video: Video = { id: `drive-${driveId}`, driveId, resourceKey, title: title.trim(), genre: newGenre.trim() || 'Sem gênero', source: 'drive', url: `https://drive.google.com/file/d/${driveId}/preview`, director: director.trim() || undefined, year: year.trim() || undefined, description: description.trim() || undefined };
-    if (!await persist([...currentVideos, video])) return;
+    if (!await persist(async () => [...savedRef.current, { ...video, ...await artwork.upload() }])) return;
     choose(video); setGenre('Todos'); setModal(null); setToast('Link salvo no aplicativo.');
   }
   async function editVideo(event: React.FormEvent) {
     event.preventDefault();
-    if (!await persist(savedRef.current.map(video => video.id === editing ? { ...video, title: title.trim(), genre: newGenre.trim() || 'Sem gênero', director: director.trim() || undefined, year: year.trim() || undefined, description: description.trim() || undefined } : video))) return;
+    if (!await persist(async () => {
+      const current = savedRef.current.find(video => video.id === editing);
+      if (!current) throw new Error('Este filme foi removido em outro aparelho. Confira o catálogo antes de salvar.');
+      const images = await artwork.upload(current);
+      return savedRef.current.map(video => video.id === editing ? { ...video, ...images, title: title.trim(), genre: newGenre.trim() || 'Sem gênero', director: director.trim() || undefined, year: year.trim() || undefined, description: description.trim() || undefined } : video);
+    })) return;
     setGenre('Todos'); setModal(null); setToast('Alterações salvas.');
   }
   async function removeVideo() {
@@ -376,14 +387,15 @@ function App() {
       </section>
     </main>
     </>}
-    <dialog ref={modalRef} onCancel={event => { if (locked) event.preventDefault(); else setModal(null); }} onClick={event => { if (event.target === event.currentTarget && !locked) setModal(null); }} onClose={() => setModal(null)} aria-labelledby="dialog-title"><div className="modal-content"><button className="close-modal" aria-label="Fechar" onClick={() => setModal(null)} disabled={locked}><X size={20}/></button>
+    <dialog ref={modalRef} onCancel={event => { if (locked) event.preventDefault(); else setModal(null); }} onClick={event => { if (event.target === event.currentTarget && !locked) setModal(null); }} onClose={() => { if (!modalRef.current?.open) setModal(null); }} aria-labelledby="dialog-title"><div className="modal-content"><button className="close-modal" aria-label="Fechar" onClick={() => setModal(null)} disabled={locked}><X size={20}/></button>
       {(modal === 'add' || modal === 'edit') && <><div className="modal-icon"><Link size={24}/></div><h2 id="dialog-title">{modal === 'edit' ? 'Editar vídeo' : 'Adicionar à sua lista'}</h2><p className="modal-description">{modal === 'edit' ? 'As alterações são salvas na lista compartilhada do aplicativo.' : 'Cole um link público do Drive com download permitido. Ele fica salvo no aplicativo e aparece para quem acessa esta instalação.'}</p><form onSubmit={modal === 'edit' ? editVideo : addVideo}>
         {modal === 'add' && <label>Link do vídeo<input type="url" placeholder="https://drive.google.com/file/d/.../view" required value={url} onChange={event => setUrl(event.target.value)} autoFocus disabled={saving}/></label>}
         <label>Título<input required maxLength={120} placeholder="Nome do vídeo" value={title} onChange={event => setTitle(event.target.value)} disabled={saving}/></label>
+        <ArtworkFields artwork={artwork} disabled={saving}/>
         <label>Gênero<input list="genre-options" placeholder="Escolha ou crie um gênero" maxLength={32} value={newGenre} onChange={event => setNewGenre(event.target.value)} disabled={saving}/><datalist id="genre-options">{[...new Set([...baseGenres, ...genres])].map(item => <option value={item} key={item}/>)}</datalist></label>
         <details className="film-details-fields"><summary>Detalhes do filme (opcional)</summary><label>Direção<input maxLength={200} value={director} onChange={event => setDirector(event.target.value)} disabled={saving}/></label><label>Ano<input inputMode="numeric" pattern="[0-9]{4}" maxLength={4} placeholder="Ex.: 2026" value={year} onChange={event => setYear(event.target.value)} disabled={saving}/></label><label>Sinopse<textarea rows={3} maxLength={3000} value={description} onChange={event => setDescription(event.target.value)} disabled={saving}/></label></details>
         {error && <p className="form-error" role="alert">{error}</p>}
-        <div className="modal-actions">{modal === 'edit' && <button type="button" className="delete-button" onClick={removeVideo} disabled={saving}><Trash2 size={16}/>Remover</button>}<button className="button primary" type="submit" disabled={saving}>{saving ? <LoaderCircle size={17} className="spin"/> : <Check size={17}/>} {saving ? 'Salvando…' : modal === 'edit' ? 'Salvar alterações' : 'Adicionar à lista'}</button></div>
+        <div className="modal-actions">{modal === 'edit' && <button type="button" className="delete-button" onClick={removeVideo} disabled={locked}><Trash2 size={16}/>Remover</button>}<button className="button primary" type="submit" disabled={locked}>{saving || artwork.validating ? <LoaderCircle size={17} className="spin"/> : <Check size={17}/>} {saving ? 'Salvando…' : artwork.validating ? 'Preparando imagem…' : modal === 'edit' ? 'Salvar alterações' : 'Adicionar à lista'}</button></div>
       </form></>}
       {modal === 'help' && <><div className="modal-icon"><ListVideo size={25}/></div><h2 id="dialog-title">Sua lista, sempre aqui.</h2><ol className="help-steps"><li><span>01</span><div><strong>Adicione um link</strong><p>Cole o link do Drive, escolha um título e um gênero. O aplicativo salva tudo no arquivo da biblioteca do servidor.</p></div></li><li><span>02</span><div><strong>Escolha um filme no catálogo</strong><p>Busque por título, direção ou ano, filtre por gênero e clique no filme para abrir a sala de projeção. Use o marcador para guardar seus favoritos na Minha lista.</p></div></li><li><span>03</span><div><strong>Acesse de outros aparelhos</strong><p>Na mesma rede, abra o endereço de rede mostrado pelo servidor. A lista é a mesma e as alterações aparecem em poucos segundos.</p></div></li></ol><div className="form-note"><ShieldCheck size={18}/><span>A lista é salva no aplicativo, não depende deste navegador. Os vídeos continuam no Drive e mantêm suas permissões. Adicione os filmes por links públicos com download permitido. Não é necessário conectar uma conta Google. O original precisa ter codecs compatíveis; H.265 depende do navegador. O player alternativo do Drive continua dependendo do processamento do Google.</span></div><button className="button primary connect-submit" onClick={() => setModal(null)}>Entendi<Check size={16}/></button></>}
     </div></dialog>

@@ -7,6 +7,7 @@ export type Video = {
   resourceKey?: string;
   url: string;
   poster?: string;
+  cover?: string;
   description?: string;
   duration?: string;
   director?: string;

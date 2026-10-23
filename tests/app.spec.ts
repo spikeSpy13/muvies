@@ -1,5 +1,7 @@
 import { test as base, expect, type BrowserContext, type Page } from '@playwright/test';
 import { readFile } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
+import sharp from 'sharp';
 import type { Video } from '../src/library';
 
 type LibraryStore = { videos: Video[]; revision: string; writes: number; failWrite: boolean; conflictOnce: boolean };
@@ -53,6 +55,26 @@ function card(page: Page, title = 'Nossa viagem') {
 async function watch(page: Page, title = 'Nossa viagem') {
   await card(page, title).getByRole('link', { name: `Assistir ${title}`, exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Sala de projeção', exact: true })).toBeVisible();
+}
+
+type ImageStore = { files: Map<string, Buffer>; uploads: number; fail: boolean };
+async function imageRoutes(context: BrowserContext, store: ImageStore = { files: new Map(), uploads: 0, fail: false }) {
+  await context.route('**/api/images', async route => {
+    store.uploads++;
+    if (store.fail) return route.fulfill({ status: 500, json: { message: 'Não foi possível salvar a imagem no computador.' } });
+    const bytes = await sharp(route.request().postDataBuffer()!).webp().toBuffer();
+    const url = `/api/images/${createHash('sha256').update(bytes).digest('hex')}.webp`;
+    store.files.set(url, bytes);
+    return route.fulfill({ status: 201, json: { url } });
+  });
+  await context.route('**/api/images/*', route => {
+    const bytes = store.files.get(new URL(route.request().url()).pathname);
+    return bytes ? route.fulfill({ contentType: 'image/webp', body: bytes }) : route.fulfill({ status: 404 });
+  });
+  return store;
+}
+async function artworkFile(poster = true) {
+  return { name: poster ? 'Pôster.png' : 'Destaque.png', mimeType: 'image/png', buffer: await sharp({ create: { width: poster ? 120 : 320, height: 180, channels: 3, background: poster ? '#c8372d' : '#335b68' } }).png().toBuffer() };
 }
 
 test('catálogo editorial começa vazio, sem player, demonstrações ou conexão Google', async ({ page }) => {
@@ -327,4 +349,115 @@ test('migração concorrente usa o arquivo já salvo em vez de bloquear a tela',
   await expect(card(page, 'Adicionado em outro aparelho')).toBeVisible();
   await expect(page.getByText('Lista salva no aplicativo', { exact: true })).toBeVisible();
   await expect(page.locator('.catalog-problem')).toHaveCount(0);
+});
+
+test('cadastro envia pôster e imagem de destaque distintos e compartilha ambos após reabrir', async ({ page, context, browser, library }) => {
+  const images = await imageRoutes(context);
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Adicionar vídeo', exact: true }).click();
+  await page.getByLabel('Link do vídeo').fill(`https://drive.google.com/file/d/${firstId}/view`);
+  await page.getByLabel('Título', { exact: true }).fill('Nossa viagem');
+  await page.getByLabel('Pôster do filme', { exact: true }).setInputFiles(await artworkFile());
+  await expect(page.getByAltText('Prévia: pôster do filme')).toBeVisible();
+  await page.getByLabel('Imagem de destaque', { exact: true }).setInputFiles(await artworkFile(false));
+  await expect(page.getByAltText('Prévia: imagem de destaque')).toBeVisible();
+  expect(images.uploads).toBe(0); // Selecting a file does not publish it before Save.
+  await page.getByRole('button', { name: 'Adicionar à lista', exact: true }).click();
+  await expect(page.getByRole('dialog')).not.toBeVisible();
+  expect(images.uploads).toBe(2);
+  const { poster, cover } = library.videos[0];
+  expect(poster).toMatch(/^\/api\/images\/[a-f0-9]{64}\.webp$/);
+  expect(cover).not.toBe(poster);
+  await expect(card(page).getByAltText('Pôster: Nossa viagem')).toHaveAttribute('src', poster!);
+  await expect(page.locator('.feature-art img')).toHaveAttribute('src', cover!);
+  const dimensions = await card(page).locator('.card-art').boundingBox();
+  expect(dimensions!.height / dimensions!.width).toBeCloseTo(1.5, 1);
+  await page.reload();
+  await expect(page.locator('.feature-art img')).toHaveAttribute('src', cover!);
+  const second = await browser.newContext();
+  await libraryRoutes(second, library); await imageRoutes(second, images);
+  const another = await second.newPage(); await another.goto(page.url());
+  await expect(card(another).getByAltText('Pôster: Nossa viagem')).toHaveAttribute('src', poster!);
+  await expect.poll(() => another.locator('.feature-art img').evaluate(img => (img as HTMLImageElement).naturalWidth)).toBe(320);
+  await second.close();
+});
+
+test('edição preserva prévia e imagem anterior se a gravação falhar; permite remover só o destaque', async ({ page, context, library }) => {
+  const images = await imageRoutes(context);
+  await page.goto('/'); await addDriveVideo(page);
+  await card(page).getByRole('button', { name: 'Editar Nossa viagem', exact: true }).click();
+  await page.getByLabel('Pôster do filme', { exact: true }).setInputFiles(await artworkFile());
+  await expect(page.getByAltText('Prévia: pôster do filme')).toBeVisible();
+  await page.getByLabel('Imagem de destaque', { exact: true }).setInputFiles(await artworkFile(false));
+  await expect(page.getByAltText('Prévia: imagem de destaque')).toBeVisible();
+  library.failWrite = true;
+  await page.getByRole('button', { name: 'Salvar alterações', exact: true }).click();
+  await expect(page.getByRole('alert')).toContainText('A biblioteca anterior foi preservada');
+  expect(library.videos[0].poster).toBeUndefined();
+  expect(images.uploads).toBe(2);
+  await expect(page.getByAltText('Prévia: pôster do filme')).toBeVisible();
+  library.failWrite = false;
+  await page.getByRole('button', { name: 'Salvar alterações', exact: true }).click();
+  await expect(page.getByRole('dialog')).not.toBeVisible();
+  expect(images.uploads).toBe(2); // Retry reuses already uploaded images.
+  const poster = library.videos[0].poster;
+  await card(page).getByRole('button', { name: 'Editar Nossa viagem', exact: true }).click();
+  await expect(page.getByAltText('Prévia: pôster do filme')).toHaveAttribute('src', poster!);
+  await page.getByRole('button', { name: 'Remover imagem de destaque', exact: true }).click();
+  await page.getByLabel('Título', { exact: true }).fill('Novo título');
+  await page.getByRole('button', { name: 'Salvar alterações', exact: true }).click();
+  await expect(page.getByRole('dialog')).not.toBeVisible();
+  expect(library.videos[0].poster).toBe(poster); expect(library.videos[0].cover).toBeUndefined();
+  await expect(page.locator('.feature-art img')).toHaveAttribute('src', poster!);
+  await expect(card(page, 'Novo título').getByAltText('Pôster: Novo título')).toHaveAttribute('src', poster!);
+});
+
+test('arquivo inválido é recusado, cancelar não envia imagens e erro de upload mantém formulário', async ({ page, context, library }) => {
+  const images = await imageRoutes(context);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Adicionar vídeo', exact: true }).click();
+  await page.getByLabel('Pôster do filme', { exact: true }).setInputFiles({ name: 'Inválido.png', mimeType: 'image/png', buffer: Buffer.from('invalid image') });
+  await expect(page.getByRole('alert')).toContainText('Não foi possível ler a imagem');
+  await page.getByLabel('Pôster do filme', { exact: true }).setInputFiles(await artworkFile());
+  await expect(page.getByAltText('Prévia: pôster do filme')).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await page.getByRole('button', { name: 'Fechar', exact: true }).click();
+  expect(images.uploads).toBe(0);
+  await page.getByRole('button', { name: 'Adicionar vídeo', exact: true }).click();
+  await expect(page.getByAltText('Prévia: pôster do filme')).toHaveCount(0);
+  await page.getByLabel('Link do vídeo').fill(`https://drive.google.com/file/d/${firstId}/view`);
+  await page.getByLabel('Título', { exact: true }).fill('Nossa viagem');
+  await page.getByLabel('Pôster do filme', { exact: true }).setInputFiles(await artworkFile());
+  await expect(page.getByAltText('Prévia: pôster do filme')).toBeVisible();
+  images.fail = true;
+  await page.getByRole('button', { name: 'Adicionar à lista', exact: true }).click();
+  await expect(page.getByRole('alert')).toContainText('Não foi possível salvar a imagem');
+  expect(library.videos).toEqual([]);
+  await expect(page.getByLabel('Título', { exact: true })).toHaveValue('Nossa viagem');
+  images.fail = false;
+  await page.getByRole('button', { name: 'Adicionar à lista', exact: true }).click();
+  await expect(page.getByRole('dialog')).not.toBeVisible();
+  await expect(card(page).getByAltText('Pôster: Nossa viagem')).toBeVisible();
+});
+
+test('imagens em link repetido atualizam o filme existente sem duplicar nem mudar seus dados', async ({ page, context, library }) => {
+  const images = await imageRoutes(context);
+  const cover = `/api/images/${'c'.repeat(64)}.webp`;
+  images.files.set(cover, await sharp((await artworkFile(false)).buffer).webp().toBuffer());
+  library.videos = [{ ...video(firstId, 'Título preservado', 'Drama'), favorite: true, cover }]; library.revision = 'existing';
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Adicionar vídeo', exact: true }).click();
+  await page.getByLabel('Link do vídeo').fill(`https://drive.google.com/file/d/${firstId}/view`);
+  await page.getByLabel('Título', { exact: true }).fill('Não sobrescrever');
+  await page.getByLabel('Pôster do filme', { exact: true }).setInputFiles(await artworkFile());
+  await expect(page.getByAltText('Prévia: pôster do filme')).toBeVisible();
+  library.conflictOnce = true;
+  await page.getByRole('button', { name: 'Adicionar à lista', exact: true }).click();
+  await expect(page.getByRole('alert')).toContainText('A lista mudou em outro aparelho');
+  await page.getByRole('button', { name: 'Adicionar à lista', exact: true }).click();
+  await expect(page.getByRole('dialog')).not.toBeVisible();
+  expect(library.videos).toHaveLength(2);
+  expect(library.videos[0]).toMatchObject({ title: 'Título preservado', genre: 'Drama', favorite: true, cover });
+  expect(library.videos[0].poster).toMatch(/^\/api\/images\//);
 });

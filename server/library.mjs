@@ -2,6 +2,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { mkdir, open, readFile, rename, stat, unlink } from 'node:fs/promises';
 import path from 'node:path';
 import { appOrigin } from './local-network.mjs';
+import { IMAGE_URL } from './images.mjs';
 
 const MAX_BYTES = 2 * 1024 * 1024;
 const FILE_ID = /^[\w-]{10,200}$/;
@@ -38,6 +39,9 @@ function normalizeVideos(value) {
     if (video.year !== undefined && (typeof video.year !== 'string' || !/^\d{4}$/.test(video.year))) throw invalid();
     if (video.description !== undefined && (typeof video.description !== 'string' || !video.description.trim() || video.description.length > 3000 || /[\u0000-\u0008\u000b\u000c\u000e-\u001f]/.test(video.description))) throw invalid();
     if (video.favorite !== undefined && typeof video.favorite !== 'boolean') throw invalid();
+    for (const field of ['poster', 'cover']) {
+      if (video[field] !== undefined && (typeof video[field] !== 'string' || !IMAGE_URL.test(video[field]))) throw invalid();
+    }
     if (ids.has(video.id) && ids.get(video.id) !== video.driveId) throw invalid();
     if (ids.has(video.id) || files.has(video.driveId)) continue;
     ids.set(video.id, video.driveId);
@@ -55,6 +59,8 @@ function normalizeVideos(value) {
       ...(video.year ? { year: video.year } : {}),
       ...(video.description ? { description: video.description.trim() } : {}),
       ...(video.favorite ? { favorite: true } : {}),
+      ...(video.poster ? { poster: video.poster } : {}),
+      ...(video.cover ? { cover: video.cover } : {}),
     });
   }
   return videos;
