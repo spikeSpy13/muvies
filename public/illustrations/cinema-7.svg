@@ -1,0 +1,56 @@
+<svg xmlns="http://www.w3.org/2000/svg"  viewBox="0 0 400 300" fill="none">
+<defs>
+
+            <filter id="brush-stroke" x="-10%" y="-10%" width="120%" height="120%" filterUnits="objectBoundingBox">
+                <feTurbulence type="fractalNoise" baseFrequency="0.045 0.06" numOctaves="3" seed="14" result="noise" ></feTurbulence>
+                <feDisplacementMap in="SourceGraphic" in2="noise" scale="3.2" xChannelSelector="R" yChannelSelector="G" result="displaced" ></feDisplacementMap>
+                <feComponentTransfer in="displaced">
+                    <feFuncA type="linear" slope="1.05" intercept="-0.02" ></feFuncA>
+                </feComponentTransfer>
+            </filter>
+
+
+            <filter id="ink-edge" x="-5%" y="-5%" width="110%" height="110%">
+                <feTurbulence type="turbulence" baseFrequency="0.03 0.08" numOctaves="4" seed="7" result="rough" ></feTurbulence>
+                <feDisplacementMap in="SourceGraphic" in2="rough" scale="2.4" xChannelSelector="R" yChannelSelector="G" result="inked" ></feDisplacementMap>
+                <feComponentTransfer in="inked">
+                    <feFuncA type="discrete" tableValues="0 0.2 0.85 1" ></feFuncA>
+                </feComponentTransfer>
+            </filter>
+
+
+            <filter id="watercolor-wash" x="-15%" y="-15%" width="130%" height="130%">
+                <feTurbulence type="fractalNoise" baseFrequency="0.025" numOctaves="4" seed="21" result="washNoise" ></feTurbulence>
+                <feDisplacementMap in="SourceGraphic" in2="washNoise" scale="9" xChannelSelector="R" yChannelSelector="B" result="washed" ></feDisplacementMap>
+                <feGaussianBlur in="washed" stdDeviation="0.6" ></feGaussianBlur>
+            </filter>
+
+
+            <pattern id="ink-hatch" width="8" height="8" patternTransform="rotate(35 0 0)" patternUnits="userSpaceOnUse">
+                <line x1="0" y1="0" x2="0" y2="8" stroke="#141413" stroke-width="0.9" stroke-opacity="0.22" ></line>
+            </pattern>
+            <pattern id="red-hatch" width="6" height="6" patternTransform="rotate(-40 0 0)" patternUnits="userSpaceOnUse">
+                <line x1="0" y1="0" x2="0" y2="6" stroke="#C8372D" stroke-width="0.8" stroke-opacity="0.28" ></line>
+            </pattern>
+        </defs><style>.brush-stroke{filter:url(#brush-stroke)}.ink-edge{filter:url(#ink-edge)}.watercolor-wash{filter:url(#watercolor-wash)}.hero-rain-line{stroke-dasharray:12 8}</style>
+                        <rect width="400" height="300" fill="#FBF9F5"></rect>
+                        <rect width="400" height="300" fill="url(#red-hatch)" opacity="0.45"></rect>
+
+                        <g class="brush-stroke" fill="#F4EFE6" stroke="#141413" stroke-width="2">
+                            <path d="M25 220 C25 198, 58 192, 72 206 C88 186, 125 192, 132 215 C148 215, 152 235, 130 238 H35 C18 238, 15 225, 25 220 Z"></path>
+                            <path d="M255 95 C255 75, 285 70, 298 84 C314 66, 348 72, 355 92 C370 92, 372 110, 352 114 H265 C248 114, 245 102, 255 95 Z"></path>
+                        </g>
+
+                        <g class="brush-stroke svg-transition svg-anim-float">
+                            <circle cx="195" cy="118" r="64" fill="#D49B35" class="watercolor-wash" fill-opacity="0.35"></circle>
+                            <path d="M195 45 C145 45, 128 95, 145 142 L172 192 H218 L245 142 C262 95, 245 45, 195 45 Z" fill="#FBF9F5" stroke="#141413" stroke-width="3"></path>
+
+                            <path d="M195 45 C172 65, 170 125, 182 192 L208 192 C220 125, 218 65, 195 45 Z" fill="#C8372D" stroke="#141413" stroke-width="2"></path>
+                            <path d="M195 45 V192" stroke="#141413" stroke-width="2"></path>
+
+                            <line x1="178" y1="192" x2="182" y2="218" stroke="#141413" stroke-width="1.8"></line>
+                            <line x1="212" y1="192" x2="208" y2="218" stroke="#141413" stroke-width="1.8"></line>
+                            <rect x="176" y="218" width="38" height="26" rx="3" fill="#141413"></rect>
+                            <path d="M176 226 H214 M176 235 H214" stroke="#D49B35" stroke-width="1.5"></path>
+                        </g>
+                    </svg>

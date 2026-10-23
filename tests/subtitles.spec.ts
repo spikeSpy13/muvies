@@ -66,7 +66,8 @@ async function upload(page: Page, name = 'Português.srt', text = captions) {
   await page.getByLabel('Arquivo de legenda SRT').setInputFiles({ name, mimeType: 'application/x-subrip', buffer: Buffer.from(text) });
 }
 async function start(page: Page) {
-  await page.getByRole('button', { name: 'Reproduzir Vídeo com legenda', exact: true }).click();
+  const cover = page.getByRole('button', { name: 'Reproduzir Vídeo com legenda', exact: true });
+  if (await cover.isVisible()) await cover.click();
   await expect.poll(() => page.locator('video').evaluate(video => (video as HTMLVideoElement).currentTime)).toBeGreaterThan(0);
   await page.locator('video').evaluate(video => { (video as HTMLVideoElement).playbackRate = 0.1; });
 }
@@ -76,6 +77,7 @@ async function cue(page: Page) {
 
 test('SRT exibe acentos e multilinha, permite ocultar e trocar sem reiniciar o vídeo', async ({ page, store }) => {
   await page.goto('/');
+  await page.locator('.catalog-card').first().getByRole('link', { name: 'Assistir Vídeo com legenda', exact: true }).click();
   await start(page);
   await page.locator('video').evaluate(video => { (video as HTMLVideoElement).currentTime = 1; });
   await expect.poll(() => page.locator('video').evaluate(video => (video as HTMLVideoElement).currentTime)).toBeGreaterThanOrEqual(1);
@@ -101,6 +103,7 @@ test('SRT exibe acentos e multilinha, permite ocultar e trocar sem reiniciar o v
 
 test('legenda é compartilhada, persiste ao reabrir e não passa para outro vídeo', async ({ page, browser, store }) => {
   await page.goto('/');
+  await page.locator('.catalog-card').first().getByRole('link', { name: 'Assistir Vídeo com legenda', exact: true }).click();
   await upload(page);
   await expect(page.locator('.subtitle-filename')).toHaveText('Português.srt');
   await page.reload();
@@ -126,6 +129,7 @@ test('legenda é compartilhada, persiste ao reabrir e não passa para outro víd
 test('troca remota de legenda preserva o tempo e o vídeo em reprodução', async ({ page, store }) => {
   store.subtitles.set(firstId, savedSubtitle('Inicial.srt', captions));
   await page.goto('/');
+  await page.locator('.catalog-card').first().getByRole('link', { name: 'Assistir Vídeo com legenda', exact: true }).click();
   await start(page);
   await expect.poll(() => cue(page)).toBe('Olá, coração!\nSegunda linha.');
   await page.locator('video').evaluate(video => { (video as HTMLVideoElement).currentTime = 3; });
@@ -141,6 +145,7 @@ test('troca remota de legenda preserva o tempo e o vídeo em reprodução', asyn
 test('arquivo inválido e falha ao salvar preservam a legenda anterior; conflito atualiza sem sobrescrever', async ({ page, store }) => {
   store.subtitles.set(firstId, savedSubtitle('Original.srt', captions));
   await page.goto('/');
+  await page.locator('.catalog-card').first().getByRole('link', { name: 'Assistir Vídeo com legenda', exact: true }).click();
   await upload(page, 'Inválida.srt', '1\nHorários inválidos\nTexto\n');
   await expect(page.getByRole('alert')).toContainText('horários SRT válidos');
   await expect(page.locator('.subtitle-filename')).toHaveText('Original.srt');
@@ -159,6 +164,7 @@ test('arquivo inválido e falha ao salvar preservam a legenda anterior; conflito
 test('carregar SRT no modo Drive muda para reprodução direta e cabe na tela móvel', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto('/');
+  await page.locator('.catalog-card').first().getByRole('link', { name: 'Assistir Vídeo com legenda', exact: true }).click();
   await page.getByRole('button', { name: 'Player do Drive', exact: true }).click();
   await expect(page.getByText('SRT usa a reprodução direta.', { exact: true })).toBeVisible();
   await upload(page, 'Legenda com um nome muito longo para testar a tela móvel.srt');
@@ -172,6 +178,7 @@ test('falha da faixa de legenda não mostra erro de vídeo nem pede autenticaç�
   store.subtitles.set(firstId, savedSubtitle('Indisponível.srt', captions));
   store.brokenTrack = true;
   await page.goto('/');
+  await page.locator('.catalog-card').first().getByRole('link', { name: 'Assistir Vídeo com legenda', exact: true }).click();
   await start(page);
   await expect(page.getByRole('alert')).toContainText('Não foi possível carregar a legenda');
   await expect(page.locator('.player-error')).toHaveCount(0);

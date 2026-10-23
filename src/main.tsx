@@ -1,14 +1,15 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { Captions, Check, ChevronDown, CircleHelp, ExternalLink, Film, Info, Link, ListVideo, LoaderCircle, Maximize, Pencil, Play, Plus, RefreshCw, Search, ShieldCheck, Trash2, Upload, X } from 'lucide-react';
-import { authorizeDrive, driveMediaUrl, drivePreviewUrl, driveViewUrl, getSavedVideos, listDriveVideos, loadGoogleIdentity, parseDriveId, playbackErrors, saveVideos, type Video } from './library';
+import { flushSync } from 'react-dom';
+import { ArrowLeft, Captions, Check, ChevronDown, CircleHelp, ExternalLink, Film, Info, Link, ListVideo, LoaderCircle, Maximize, Pencil, Play, Plus, RefreshCw, Search, ShieldCheck, Trash2, Upload, X } from 'lucide-react';
+import { driveMediaUrl, drivePreviewUrl, driveViewUrl, getSavedVideos, parseDriveId, playbackErrors, saveVideos, type Video } from './library';
 import { LibraryError, readLibrary, writeLibrary, type LibrarySnapshot } from './storage';
 import { useSubtitles } from './subtitles';
 import './styles.css';
+import { Catalog, filmUrl } from './Catalog';
 
-type Modal = 'add' | 'connect' | 'help' | 'edit' | null;
+type Modal = 'add' | 'help' | 'edit' | null;
 const baseGenres = ['Animação', 'Aventura', 'Fantasia', 'Ação', 'Comédia', 'Documentário', 'Drama', 'Terror'];
-const localComputer = ['localhost', '127.0.0.1', '[::1]'].includes(window.location.hostname);
 function savedValue(key: string) {
   try { return localStorage.getItem(key) || ''; } catch { return ''; }
 }
@@ -21,7 +22,12 @@ function DriveIcon({ size = 20 }: { size?: number }) {
 
 function App() {
   const [saved, setSaved] = useState<Video[]>([]);
-  const [activeId, setActiveId] = useState(() => savedValue('muvies.active-video.v1'));
+  const [routeId, setRouteId] = useState<string | null>(() => new URLSearchParams(window.location.search).get('filme'));
+  const routeRef = useRef(routeId);
+  routeRef.current = routeId;
+  const watching = routeId !== null;
+  const initialAutoplay = useRef(watching);
+  const [activeId, setActiveId] = useState(() => new URLSearchParams(window.location.search).get('filme') || savedValue('muvies.active-video.v1'));
   const [libraryReady, setLibraryReady] = useState(false);
   const [storageProblem, setStorageProblem] = useState('');
   const [loadAttempt, setLoadAttempt] = useState(0);
@@ -32,9 +38,10 @@ function App() {
   const activeIdRef = useRef(activeId);
   activeIdRef.current = activeId;
   const [genre, setGenre] = useState('Todos');
+  const [favoritesOnly, setFavoritesOnly] = useState(false);
+  const [catalogSearch, setCatalogSearch] = useState('');
   const [playing, setPlaying] = useState(false);
   const [playerError, setPlayerError] = useState('');
-  const [playerNeedsAuth, setPlayerNeedsAuth] = useState(false);
   const [playbackMode, setPlaybackMode] = useState<'direct' | 'drive'>('direct');
   const [playerLoading, setPlayerLoading] = useState(false);
   const [driveFrameVersion, setDriveFrameVersion] = useState(0);
@@ -44,13 +51,12 @@ function App() {
   const [title, setTitle] = useState('');
   const [url, setUrl] = useState('');
   const [newGenre, setNewGenre] = useState('Sem gênero');
+  const [director, setDirector] = useState('');
+  const [year, setYear] = useState('');
+  const [description, setDescription] = useState('');
   const [editing, setEditing] = useState<string | null>(null);
   const [error, setError] = useState('');
   const [toast, setToast] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [identityReady, setIdentityReady] = useState(false);
-  const [clientId, setClientId] = useState(() => savedValue('muvies.google-client-id'));
-  const [connected, setConnected] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
   const trackRef = useRef<HTMLTrackElement>(null);
   const subtitleInputRef = useRef<HTMLInputElement>(null);
@@ -62,19 +68,23 @@ function App() {
   const playAttempt = useRef(0);
   const diagnosedAttempt = useRef(-1);
   const active = saved.find(video => video.id === activeId) || saved[0] || null;
-  const subtitles = useSubtitles(active?.driveId);
+  const subtitles = useSubtitles(watching ? active?.driveId : undefined);
   const subtitleEnabled = useRef(subtitles.enabled);
   subtitleEnabled.current = subtitles.enabled;
   const genres = [...new Set(saved.map(video => video.genre))];
   const currentGenre = genres.includes(genre) ? genre : 'Todos';
   const filtered = saved.filter(video => currentGenre === 'Todos' || video.genre === currentGenre);
   const options = filtered.filter(video => video.title.toLocaleLowerCase('pt-BR').includes(search.toLocaleLowerCase('pt-BR')));
-  const locked = busy || saving;
+  const locked = saving;
 
   function applySnapshot(snapshot: LibrarySnapshot) {
     const previousId = activeIdRef.current;
     const selectedId = snapshot.videos.some(video => video.id === previousId) ? previousId : snapshot.videos[0]?.id || '';
     if (previousId && previousId !== selectedId) stopPlayback();
+    if (routeRef.current && !snapshot.videos.some(video => video.id === routeRef.current)) {
+      navigateCatalog(true);
+      setToast('Este filme não está mais no catálogo.');
+    }
     activeIdRef.current = selectedId;
     setActiveId(selectedId);
     revision.current = snapshot.revision;
@@ -85,12 +95,65 @@ function App() {
   function stopPlayback() {
     playAttempt.current++;
     videoRef.current?.pause();
-    setPlaying(false); setPlayerError(''); setPlayerNeedsAuth(false); setPlayerLoading(false);
+    setPlaying(false); setPlayerError(''); setPlayerLoading(false);
   }
   function choose(video: Video) {
     stopPlayback(); activeIdRef.current = video.id; setActiveId(video.id); remember('muvies.active-video.v1', video.id);
+    if (routeRef.current && routeRef.current !== video.id) {
+      routeRef.current = video.id;
+      setRouteId(video.id);
+      window.history.replaceState(null, '', filmUrl(video));
+    }
     setDropdown(false); setSearch('');
   }
+  function navigateCatalog(replace = false) {
+    initialAutoplay.current = false;
+    stopPlayback();
+    routeRef.current = null;
+    setRouteId(null);
+    const target = new URL(window.location.href);
+    target.searchParams.delete('filme');
+    window.history[replace ? 'replaceState' : 'pushState'](null, '', target.pathname + target.search);
+    window.scrollTo(0, 0);
+  }
+  function openFilm(event: React.MouseEvent<HTMLAnchorElement>, video: Video) {
+    if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+    event.preventDefault();
+    initialAutoplay.current = false;
+    window.history.pushState(null, '', filmUrl(video));
+    // Mount the native player before play(), preserving the click's user activation.
+    flushSync(() => { choose(video); setPlaybackMode('direct'); routeRef.current = video.id; setRouteId(video.id); });
+    window.scrollTo(0, 0);
+    void startPlayback(video);
+  }
+  async function toggleFavorite(video: Video) {
+    await persist(savedRef.current.map(item => item.id === video.id ? { ...item, favorite: !item.favorite } : item));
+  }
+  useEffect(() => {
+    const navigate = () => {
+      initialAutoplay.current = false;
+      stopPlayback();
+      const id = new URLSearchParams(window.location.search).get('filme');
+      routeRef.current = id;
+      setRouteId(id);
+      if (id) { activeIdRef.current = id; setActiveId(id); }
+    };
+    window.addEventListener('popstate', navigate);
+    return () => window.removeEventListener('popstate', navigate);
+  }, []);
+  useEffect(() => {
+    document.title = watching && active ? `${active.title} — The Metropolis` : 'The Metropolis — seu cinema particular';
+    document.querySelector('meta[name="theme-color"]')?.setAttribute('content', watching ? '#101014' : '#FBF9F5');
+    if (libraryReady && watching && !savedRef.current.some(video => video.id === routeId)) {
+      navigateCatalog(true);
+      setToast('Este filme não está mais no catálogo.');
+      return;
+    }
+    if (libraryReady && initialAutoplay.current && watching && active?.id === routeId) {
+      initialAutoplay.current = false;
+      void startPlayback(active);
+    }
+  }, [libraryReady, watching, routeId, active?.id, active?.title]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -144,13 +207,6 @@ function App() {
   }, [libraryReady]);
 
   useEffect(() => {
-    if (!localComputer) return;
-    let cancelled = false;
-    fetch('/api/drive/session').then(response => response.ok ? response.json() : null)
-      .then(data => { if (!cancelled && data?.connected) setConnected(true); }).catch(() => {});
-    return () => { cancelled = true; };
-  }, []);
-  useEffect(() => {
     if (trackRef.current) trackRef.current.track.mode = subtitles.enabled ? 'showing' : 'disabled';
   }, [subtitles.enabled, subtitles.trackUrl, playbackMode]);
   useEffect(() => {
@@ -187,11 +243,6 @@ function App() {
   useEffect(() => {
     if (modal) modalRef.current?.showModal(); else modalRef.current?.close();
     setError('');
-    if (modal === 'connect') {
-      let cancelled = false;
-      loadGoogleIdentity().then(() => { if (!cancelled) setIdentityReady(true); }).catch(error => { if (!cancelled) setError(error.message); });
-      return () => { cancelled = true; };
-    }
   }, [modal]);
 
   async function persist(videos: Video[]): Promise<boolean> {
@@ -212,8 +263,8 @@ function App() {
     } finally { savingRef.current = false; setSaving(false); }
   }
   function changePlaybackMode(mode: 'direct' | 'drive') { stopPlayback(); setPlaybackMode(mode); }
-  function openAdd() { setTitle(''); setUrl(''); setNewGenre('Sem gênero'); setEditing(null); setModal('add'); }
-  function openEdit(video: Video) { setEditing(video.id); setTitle(video.title); setNewGenre(video.genre); setModal('edit'); }
+  function openAdd() { setTitle(''); setUrl(''); setNewGenre('Sem gênero'); setDirector(''); setYear(''); setDescription(''); setEditing(null); setModal('add'); }
+  function openEdit(video: Video) { setEditing(video.id); setTitle(video.title); setNewGenre(video.genre); setDirector(video.director || ''); setYear(video.year || ''); setDescription(video.description || ''); setModal('edit'); }
   async function addVideo(event: React.FormEvent) {
     event.preventDefault();
     const driveId = parseDriveId(url);
@@ -229,13 +280,13 @@ function App() {
       setToast(resourceKey ? 'Link compartilhado atualizado e salvo.' : 'Este vídeo já está na sua lista.');
       return;
     }
-    const video: Video = { id: `drive-${driveId}`, driveId, resourceKey, title: title.trim(), genre: newGenre.trim() || 'Sem gênero', source: 'drive', url: `https://drive.google.com/file/d/${driveId}/preview` };
+    const video: Video = { id: `drive-${driveId}`, driveId, resourceKey, title: title.trim(), genre: newGenre.trim() || 'Sem gênero', source: 'drive', url: `https://drive.google.com/file/d/${driveId}/preview`, director: director.trim() || undefined, year: year.trim() || undefined, description: description.trim() || undefined };
     if (!await persist([...currentVideos, video])) return;
     choose(video); setGenre('Todos'); setModal(null); setToast('Link salvo no aplicativo.');
   }
   async function editVideo(event: React.FormEvent) {
     event.preventDefault();
-    if (!await persist(savedRef.current.map(video => video.id === editing ? { ...video, title: title.trim(), genre: newGenre.trim() || 'Sem gênero' } : video))) return;
+    if (!await persist(savedRef.current.map(video => video.id === editing ? { ...video, title: title.trim(), genre: newGenre.trim() || 'Sem gênero', director: director.trim() || undefined, year: year.trim() || undefined, description: description.trim() || undefined } : video))) return;
     setGenre('Todos'); setModal(null); setToast('Alterações salvas.');
   }
   async function removeVideo() {
@@ -246,51 +297,28 @@ function App() {
     }
     setGenre('Todos'); setModal(null); setToast('Link removido da lista. O arquivo continua no seu Drive.');
   }
-  async function connect() {
-    if (!clientId.trim().endsWith('.apps.googleusercontent.com')) return setError('Informe um Client ID OAuth válido, terminado em .apps.googleusercontent.com.');
-    setBusy(true); setError('');
-    try {
-      const { token, expiresIn } = await authorizeDrive(clientId.trim());
-      const response = await fetch('/api/drive/session', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ accessToken: token, expiresIn }) });
-      if (!response.ok) throw new Error('Abra o Muvies no computador que executa o servidor para conectar uma conta Google.');
-      setConnected(true);
-      const imported = await listDriveVideos(token);
-      const merged = [...savedRef.current];
-      for (const video of imported) if (!merged.some(item => item.id === video.id)) merged.push(video);
-      if (!await persist(merged)) return;
-      remember('muvies.google-client-id', clientId.trim());
-      setGenre('Todos');
-      if (!active && merged[0]) choose(merged[0]);
-      setModal(null); setToast(imported.length ? `${imported.length} vídeo(s) encontrado(s). Lista salva no aplicativo.` : 'Conta conectada. Nenhum vídeo encontrado.');
-    } catch (error) { setError(error instanceof Error ? error.message : 'Não foi possível conectar.'); }
-    finally { setBusy(false); }
-  }
   async function diagnosePlayback(video: Video, attempt: number) {
     if (attempt !== playAttempt.current || diagnosedAttempt.current === attempt) return;
     diagnosedAttempt.current = attempt;
     let message = 'Não foi possível reproduzir este formato. Tente um MP4 com vídeo H.264 e áudio AAC, ou use o player do Drive.';
-    let needsAuth = false;
     try {
       const response = await fetch(driveMediaUrl(video), { method: 'HEAD', signal: AbortSignal.timeout(15000) });
       const code = response.headers.get('X-Muvies-Error') || '';
-      needsAuth = code === 'AUTH_REQUIRED';
       if (!response.ok) message = playbackErrors[code] || 'Não foi possível receber o arquivo pelo servidor do Muvies.';
-      if (needsAuth && !localComputer) message = 'Este vídeo exige uma conta Google com acesso. Abra o arquivo no Drive e entre nessa conta para assistir.';
     } catch { message = 'Não foi possível acessar o servidor ou o Drive. Verifique a conexão e tente novamente.'; }
     if (attempt !== playAttempt.current) return;
-    if (needsAuth) setConnected(false);
-    setPlayerNeedsAuth(needsAuth); setPlayerError(message); setPlayerLoading(false);
+    setPlayerError(message); setPlayerLoading(false);
   }
-  async function startPlayback() {
-    if (!active) return;
+  async function startPlayback(selected = active) {
+    if (!selected || (!videoRef.current && playbackModeRef.current === 'direct')) return;
     const attempt = ++playAttempt.current;
-    setPlaying(true); setPlayerError(''); setPlayerNeedsAuth(false);
-    if (playbackMode === 'drive') return;
+    setPlaying(true); setPlayerError('');
+    if (playbackModeRef.current === 'drive') return;
     setPlayerLoading(true);
     try { await videoRef.current?.play(); }
     catch (error) {
       if (error instanceof DOMException && error.name === 'NotAllowedError' && attempt === playAttempt.current) setPlayerError('O navegador bloqueou o início. Clique em Tentar novamente para dar o play.');
-      else await diagnosePlayback(active, attempt);
+      else await diagnosePlayback(selected, attempt);
     } finally { if (attempt === playAttempt.current) setPlayerLoading(false); }
   }
   function retryPlayback() {
@@ -312,13 +340,14 @@ function App() {
   }
 
   return <>
+    {!watching ? <Catalog videos={saved} ready={libraryReady} saving={saving} locked={locked} problem={storageProblem} actionProblem={modal ? '' : error} genre={currentGenre} search={catalogSearch} favoritesOnly={favoritesOnly} onGenre={setGenre} onSearch={setCatalogSearch} onFavorites={setFavoritesOnly} onWatch={openFilm} onAdd={openAdd} onEdit={openEdit} onFavorite={toggleFavorite} onHelp={() => setModal('help')} onRetry={() => setLoadAttempt(value => value + 1)}/> : <>
     <header className="header"><div className="header-inner compact-header">
-      <a className="brand" href="#" aria-label="Muvies, início"><span className="brand-symbol"><span/><Play size={22} fill="currentColor" strokeWidth={0}/></span>muvies<span className="brand-dot">.</span></a>
-      <div className="header-actions">{localComputer && <button className="button secondary" onClick={() => setModal('connect')} disabled={!libraryReady || locked}><DriveIcon size={16}/>{connected ? 'Sincronizar Drive' : 'Conectar Drive'}</button>}<button className="help-button" aria-label="Como funciona" onClick={() => setModal('help')}><CircleHelp size={18}/></button></div>
+      <a className="watch-brand" href="?" onClick={event => { if (event.button === 0 && !event.metaKey && !event.ctrlKey && !event.shiftKey && !event.altKey) { event.preventDefault(); navigateCatalog(); } }}>THE METROPOLIS</a>
+      <div className="header-actions"><button className="watch-catalog-back" onClick={() => navigateCatalog()}><ArrowLeft size={16}/>Voltar ao catálogo</button><button className="help-button" aria-label="Como funciona" onClick={() => setModal('help')}><CircleHelp size={18}/></button></div>
     </div></header>
     <main className="compact-main">
       <section className="watch-section" aria-label="Listas e player">
-        <div className="list-heading"><div><h1>Seus vídeos<span>{saved.length}</span></h1><p className="save-status">{saving ? <LoaderCircle size={13} className="spin"/> : libraryReady && !storageProblem ? <Check size={13}/> : <Info size={13}/>} {saving ? 'Salvando lista…' : !libraryReady ? 'Carregando lista…' : storageProblem ? 'Sincronização pendente' : 'Lista salva no aplicativo'}</p></div><button className="button primary" onClick={openAdd} disabled={!libraryReady || locked}><Plus size={17}/>Adicionar vídeo</button></div>
+        <div className="list-heading"><div><h1>Sala de projeção</h1><p className="save-status">{saving ? <LoaderCircle size={13} className="spin"/> : libraryReady && !storageProblem ? <Check size={13}/> : <Info size={13}/>} {saving ? 'Salvando lista…' : !libraryReady ? 'Carregando lista…' : storageProblem ? 'Sincronização pendente' : 'Lista salva no aplicativo'}</p></div><button className="button primary" onClick={openAdd} disabled={!libraryReady || locked}><Plus size={17}/>Adicionar vídeo</button></div>
         {storageProblem && <div className="storage-problem" role="alert"><Info size={17}/><span>{storageProblem}</span>{!libraryReady && <button onClick={() => setLoadAttempt(value => value + 1)}>Tentar carregar novamente</button>}</div>}
         <div className="library-toolbar">
           <div className="genre-tabs" aria-label="Filtrar por gênero"><button className={currentGenre === 'Todos' ? 'genre selected' : 'genre'} onClick={() => setGenre('Todos')}>Todos<span>{saved.length}</span></button>{genres.map(item => <button key={item} className={currentGenre === item ? 'genre selected' : 'genre'} onClick={() => setGenre(item)}>{item}</button>)}</div>
@@ -339,23 +368,24 @@ function App() {
             {playbackMode === 'direct' ? <video key={active.id} ref={videoRef} src={driveMediaUrl(active)} controls={playing} preload="none" playsInline onError={event => { if (playing && event.target === event.currentTarget && event.currentTarget === videoRef.current) void diagnosePlayback(active, playAttempt.current); }} onEnded={() => setPlaying(false)} aria-label={`Player: ${active.title}`}>
               {subtitles.subtitle && <track key={subtitles.trackUrl} ref={trackRef} kind="subtitles" src={subtitles.trackUrl} label={subtitles.subtitle.filename} srcLang="und" default={subtitles.enabled}/>}
             </video> : playing && <iframe key={`${active.id}-${driveFrameVersion}`} src={drivePreviewUrl(active)} title={`Player do Google Drive: ${active.title}`} allow="autoplay; fullscreen; encrypted-media; picture-in-picture" allowFullScreen/>}
-            {!playing && <div className="player-cover drive-cover"><div className="player-top"><span className="player-label"><span/>GOOGLE DRIVE</span><DriveIcon size={18}/></div><button className="big-play" aria-label={`Reproduzir ${active.title}`} onClick={startPlayback}><Play size={27} fill="currentColor" strokeWidth={0}/></button><div className="cover-bottom"><div><div className="cover-genre">{active.genre}{active.duration && <><span>·</span>{active.duration}</>}</div><h2>{active.title}</h2></div><button className="fullscreen" aria-label="Abrir player em tela cheia" onClick={() => playerRef.current?.requestFullscreen?.().catch(() => setToast('Use a opção de tela cheia nos controles do vídeo.'))}><Maximize size={19}/></button></div></div>}
+            {!playing && <div className="player-cover drive-cover"><div className="player-top"><span className="player-label"><span/>GOOGLE DRIVE</span><DriveIcon size={18}/></div><button className="big-play" aria-label={`Reproduzir ${active.title}`} onClick={() => void startPlayback()}><Play size={27} fill="currentColor" strokeWidth={0}/></button><div className="cover-bottom"><div><div className="cover-genre">{active.genre}{active.duration && <><span>·</span>{active.duration}</>}</div><h2>{active.title}</h2></div><button className="fullscreen" aria-label="Abrir player em tela cheia" onClick={() => playerRef.current?.requestFullscreen?.().catch(() => setToast('Use a opção de tela cheia nos controles do vídeo.'))}><Maximize size={19}/></button></div></div>}
             {playerLoading && !playerError && <div className="player-loading" role="status"><LoaderCircle size={30} className="spin"/><span>Carregando arquivo original…</span></div>}
-            {playerError && <div className="player-error"><Info size={24}/><strong>Não foi possível iniciar o vídeo.</strong><p>{playerError}</p><div className="player-error-actions">{playerNeedsAuth && localComputer && <button className="button primary" onClick={() => setModal('connect')}><DriveIcon size={17}/>Conectar Drive</button>}<button className="button secondary" onClick={retryPlayback}>Tentar novamente</button></div></div>}
+            {playerError && <div className="player-error"><Info size={24}/><strong>Não foi possível iniciar o vídeo.</strong><p>{playerError}</p><div className="player-error-actions"><button className="button secondary" onClick={retryPlayback}>Tentar novamente</button></div></div>}
           </>}
         </div>
       </section>
     </main>
+    </>}
     <dialog ref={modalRef} onCancel={event => { if (locked) event.preventDefault(); else setModal(null); }} onClick={event => { if (event.target === event.currentTarget && !locked) setModal(null); }} onClose={() => setModal(null)} aria-labelledby="dialog-title"><div className="modal-content"><button className="close-modal" aria-label="Fechar" onClick={() => setModal(null)} disabled={locked}><X size={20}/></button>
-      {(modal === 'add' || modal === 'edit') && <><div className="modal-icon"><Link size={24}/></div><h2 id="dialog-title">{modal === 'edit' ? 'Editar vídeo' : 'Adicionar à sua lista'}</h2><p className="modal-description">{modal === 'edit' ? 'As alterações são salvas na lista compartilhada do aplicativo.' : 'Cole o link do Drive. Ele fica salvo no aplicativo e aparece para quem acessa esta instalação.'}</p><form onSubmit={modal === 'edit' ? editVideo : addVideo}>
+      {(modal === 'add' || modal === 'edit') && <><div className="modal-icon"><Link size={24}/></div><h2 id="dialog-title">{modal === 'edit' ? 'Editar vídeo' : 'Adicionar à sua lista'}</h2><p className="modal-description">{modal === 'edit' ? 'As alterações são salvas na lista compartilhada do aplicativo.' : 'Cole um link público do Drive com download permitido. Ele fica salvo no aplicativo e aparece para quem acessa esta instalação.'}</p><form onSubmit={modal === 'edit' ? editVideo : addVideo}>
         {modal === 'add' && <label>Link do vídeo<input type="url" placeholder="https://drive.google.com/file/d/.../view" required value={url} onChange={event => setUrl(event.target.value)} autoFocus disabled={saving}/></label>}
         <label>Título<input required maxLength={120} placeholder="Nome do vídeo" value={title} onChange={event => setTitle(event.target.value)} disabled={saving}/></label>
         <label>Gênero<input list="genre-options" placeholder="Escolha ou crie um gênero" maxLength={32} value={newGenre} onChange={event => setNewGenre(event.target.value)} disabled={saving}/><datalist id="genre-options">{[...new Set([...baseGenres, ...genres])].map(item => <option value={item} key={item}/>)}</datalist></label>
+        <details className="film-details-fields"><summary>Detalhes do filme (opcional)</summary><label>Direção<input maxLength={200} value={director} onChange={event => setDirector(event.target.value)} disabled={saving}/></label><label>Ano<input inputMode="numeric" pattern="[0-9]{4}" maxLength={4} placeholder="Ex.: 2026" value={year} onChange={event => setYear(event.target.value)} disabled={saving}/></label><label>Sinopse<textarea rows={3} maxLength={3000} value={description} onChange={event => setDescription(event.target.value)} disabled={saving}/></label></details>
         {error && <p className="form-error" role="alert">{error}</p>}
         <div className="modal-actions">{modal === 'edit' && <button type="button" className="delete-button" onClick={removeVideo} disabled={saving}><Trash2 size={16}/>Remover</button>}<button className="button primary" type="submit" disabled={saving}>{saving ? <LoaderCircle size={17} className="spin"/> : <Check size={17}/>} {saving ? 'Salvando…' : modal === 'edit' ? 'Salvar alterações' : 'Adicionar à lista'}</button></div>
       </form></>}
-      {modal === 'connect' && <><div className="modal-icon google"><DriveIcon size={28}/></div><h2 id="dialog-title">Conectar Google Drive</h2><p className="modal-description">Opcional para links públicos. Para vídeos privados e importação automática, autorize a leitura dos arquivos no computador que executa o Muvies.</p><details className="setup-details" open={!clientId}><summary>Configuração da conexão Google<ChevronDown size={15}/></summary><p>Use um Client ID OAuth do tipo Aplicativo da Web, com a API Drive ativada e esta origem autorizada:</p><code>{window.location.origin}</code><label>Client ID do Google<input value={clientId} onChange={event => setClientId(event.target.value)} placeholder="Seu identificador.apps.googleusercontent.com" autoComplete="off"/></label><p>Configure a permissão <code>drive.readonly</code> e inclua sua conta como usuário de teste quando necessário. Esse identificador é público; não informe um Client Secret.</p></details>{error && <p className="form-error" role="alert">{error}</p>}<button className="button primary connect-submit" onClick={connect} disabled={locked || !identityReady}>{locked ? <LoaderCircle size={18} className="spin"/> : <DriveIcon size={18}/>} {locked ? 'Conectando e salvando…' : 'Continuar com o Google'}</button><p className="connection-footnote">Os links importados ficam na lista compartilhada. A autorização da sua conta permanece separada e não é compartilhada com a rede.</p></>}
-      {modal === 'help' && <><div className="modal-icon"><ListVideo size={25}/></div><h2 id="dialog-title">Sua lista, sempre aqui.</h2><ol className="help-steps"><li><span>01</span><div><strong>Adicione um link</strong><p>Cole o link do Drive, escolha um título e um gênero. O aplicativo salva tudo no arquivo da biblioteca do servidor.</p></div></li><li><span>02</span><div><strong>Escolha na lista acima do player</strong><p>Filtre por gênero, busque pelo título e use o lápis para editar ou remover um link.</p></div></li><li><span>03</span><div><strong>Acesse de outros aparelhos</strong><p>Na mesma rede, abra o endereço de rede mostrado pelo servidor. A lista é a mesma e as alterações aparecem em poucos segundos.</p></div></li></ol><div className="form-note"><ShieldCheck size={18}/><span>A lista é salva no aplicativo, não depende deste navegador. Os vídeos continuam no Drive e mantêm suas permissões. Links públicos podem usar a reprodução direta sem Client ID. O original precisa ter codecs compatíveis; H.265 depende do navegador. O player alternativo do Drive continua dependendo do processamento do Google.</span></div><button className="button primary connect-submit" onClick={() => setModal(null)}>Entendi<Check size={16}/></button></>}
+      {modal === 'help' && <><div className="modal-icon"><ListVideo size={25}/></div><h2 id="dialog-title">Sua lista, sempre aqui.</h2><ol className="help-steps"><li><span>01</span><div><strong>Adicione um link</strong><p>Cole o link do Drive, escolha um título e um gênero. O aplicativo salva tudo no arquivo da biblioteca do servidor.</p></div></li><li><span>02</span><div><strong>Escolha um filme no catálogo</strong><p>Busque por título, direção ou ano, filtre por gênero e clique no filme para abrir a sala de projeção. Use o marcador para guardar seus favoritos na Minha lista.</p></div></li><li><span>03</span><div><strong>Acesse de outros aparelhos</strong><p>Na mesma rede, abra o endereço de rede mostrado pelo servidor. A lista é a mesma e as alterações aparecem em poucos segundos.</p></div></li></ol><div className="form-note"><ShieldCheck size={18}/><span>A lista é salva no aplicativo, não depende deste navegador. Os vídeos continuam no Drive e mantêm suas permissões. Adicione os filmes por links públicos com download permitido. Não é necessário conectar uma conta Google. O original precisa ter codecs compatíveis; H.265 depende do navegador. O player alternativo do Drive continua dependendo do processamento do Google.</span></div><button className="button primary connect-submit" onClick={() => setModal(null)}>Entendi<Check size={16}/></button></>}
     </div></dialog>
     {toast && <div className="toast" role="status"><Check size={18}/>{toast}<button aria-label="Dispensar aviso" onClick={() => setToast('')}><X size={16}/></button></div>}
   </>;

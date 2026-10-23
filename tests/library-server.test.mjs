@@ -81,6 +81,21 @@ test('atualização, deduplicação e remoção mantêm a revisão e o vazio int
   assert.deepEqual(await (await fetch(context.endpoint)).json(), empty);
 });
 
+test('detalhes editoriais e Minha lista persistem e mantêm compatibilidade com links antigos', async t => {
+  const context = await fixture(t);
+  const details = { ...video, director: 'Clara Monteiro', year: '1971', description: 'Uma história à beira-mar.\nCom duas linhas.', favorite: true };
+  const saved = await (await save(context, [details])).json();
+  assert.deepEqual(saved.videos, [details]);
+  const restarted = await fixture(t, context.directory);
+  assert.deepEqual((await (await fetch(restarted.endpoint)).json()).videos, [details]);
+  for (const invalid of [{ year: 'ano' }, { director: '\ninválido' }, { description: '\u0000' }, { favorite: 'sim' }]) {
+    assert.equal((await save(context, [{ ...details, ...invalid }], saved.revision)).status, 400);
+  }
+  assert.deepEqual((await (await fetch(context.endpoint)).json()).videos, [details]);
+  const cleared = await (await save(context, [video], saved.revision)).json();
+  assert.deepEqual(cleared.videos, [video]);
+});
+
 test('revisão antiga ou ausente não sobrescreve os links já salvos', async t => {
   const context = await fixture(t);
   const initial = await (await save(context, [video])).json();

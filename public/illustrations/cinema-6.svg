@@ -1,0 +1,57 @@
+<svg xmlns="http://www.w3.org/2000/svg"  viewBox="0 0 400 300" fill="none">
+<defs>
+
+            <filter id="brush-stroke" x="-10%" y="-10%" width="120%" height="120%" filterUnits="objectBoundingBox">
+                <feTurbulence type="fractalNoise" baseFrequency="0.045 0.06" numOctaves="3" seed="14" result="noise" ></feTurbulence>
+                <feDisplacementMap in="SourceGraphic" in2="noise" scale="3.2" xChannelSelector="R" yChannelSelector="G" result="displaced" ></feDisplacementMap>
+                <feComponentTransfer in="displaced">
+                    <feFuncA type="linear" slope="1.05" intercept="-0.02" ></feFuncA>
+                </feComponentTransfer>
+            </filter>
+
+
+            <filter id="ink-edge" x="-5%" y="-5%" width="110%" height="110%">
+                <feTurbulence type="turbulence" baseFrequency="0.03 0.08" numOctaves="4" seed="7" result="rough" ></feTurbulence>
+                <feDisplacementMap in="SourceGraphic" in2="rough" scale="2.4" xChannelSelector="R" yChannelSelector="G" result="inked" ></feDisplacementMap>
+                <feComponentTransfer in="inked">
+                    <feFuncA type="discrete" tableValues="0 0.2 0.85 1" ></feFuncA>
+                </feComponentTransfer>
+            </filter>
+
+
+            <filter id="watercolor-wash" x="-15%" y="-15%" width="130%" height="130%">
+                <feTurbulence type="fractalNoise" baseFrequency="0.025" numOctaves="4" seed="21" result="washNoise" ></feTurbulence>
+                <feDisplacementMap in="SourceGraphic" in2="washNoise" scale="9" xChannelSelector="R" yChannelSelector="B" result="washed" ></feDisplacementMap>
+                <feGaussianBlur in="washed" stdDeviation="0.6" ></feGaussianBlur>
+            </filter>
+
+
+            <pattern id="ink-hatch" width="8" height="8" patternTransform="rotate(35 0 0)" patternUnits="userSpaceOnUse">
+                <line x1="0" y1="0" x2="0" y2="8" stroke="#141413" stroke-width="0.9" stroke-opacity="0.22" ></line>
+            </pattern>
+            <pattern id="red-hatch" width="6" height="6" patternTransform="rotate(-40 0 0)" patternUnits="userSpaceOnUse">
+                <line x1="0" y1="0" x2="0" y2="6" stroke="#C8372D" stroke-width="0.8" stroke-opacity="0.28" ></line>
+            </pattern>
+        </defs><style>.brush-stroke{filter:url(#brush-stroke)}.ink-edge{filter:url(#ink-edge)}.watercolor-wash{filter:url(#watercolor-wash)}.hero-rain-line{stroke-dasharray:12 8}</style>
+                        <rect width="400" height="300" fill="#181715"></rect>
+
+                        <polygon points="200,0 75,300 325,300" fill="#FBF9F5" fill-opacity="0.92" class="brush-stroke"></polygon>
+                        <ellipse cx="200" cy="215" rx="95" ry="45" fill="#D49B35" fill-opacity="0.32" class="watercolor-wash svg-transition svg-anim-pulse"></ellipse>
+
+                        <path d="M0 0 H75 C65 110, 45 200, 20 300 H0 Z" fill="#C8372D" class="brush-stroke"></path>
+                        <path d="M400 0 H325 C335 110, 355 200, 380 300 H400 Z" fill="#C8372D" class="brush-stroke"></path>
+
+                        <g class="brush-stroke svg-transition svg-anim-float">
+
+                            <ellipse cx="215" cy="228" rx="68" ry="22" fill="#141413" fill-opacity="0.22"></ellipse>
+
+                            <path d="M145 195 L145 145 C145 115, 195 115, 205 140 C215 162, 255 155, 255 182 L255 195 Z" fill="#141413"></path>
+
+                            <rect x="148" y="192" width="104" height="12" fill="#FBF9F5" stroke="#141413" stroke-width="2"></rect>
+                            <path d="M158 192 V199 M170 192 V199 M182 192 V199 M198 192 V199 M210 192 V199 M226 192 V199 M238 192 V199" stroke="#141413" stroke-width="3"></path>
+
+                            <line x1="155" y1="204" x2="155" y2="235" stroke="#141413" stroke-width="3.5"></line>
+                            <line x1="245" y1="204" x2="245" y2="235" stroke="#141413" stroke-width="3.5"></line>
+                            <line x1="195" y1="195" x2="195" y2="225" stroke="#141413" stroke-width="2.5"></line>
+                        </g>
+                    </svg>

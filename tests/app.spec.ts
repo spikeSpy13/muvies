@@ -21,6 +21,15 @@ async function libraryRoutes(context: BrowserContext, library: LibraryStore) {
     library.revision = `saved-${++library.writes}`;
     return route.fulfill({ json: { videos: library.videos, revision: library.revision } });
   });
+  const original = await readFile(new URL('./fixtures/native-video.mp4', import.meta.url));
+  await context.route('**/api/drive/media/*', route => {
+    const range = route.request().headers().range?.match(/^bytes=(\d+)-(\d*)$/);
+    if (!range) return route.fulfill({ contentType: 'video/mp4', body: original, headers: { 'Accept-Ranges': 'bytes' } });
+    const start = Number(range[1]);
+    const end = range[2] ? Math.min(Number(range[2]), original.length - 1) : original.length - 1;
+    return route.fulfill({ status: 206, contentType: 'video/mp4', headers: { 'Accept-Ranges': 'bytes', 'Content-Range': `bytes ${start}-${end}/${original.length}` }, body: original.subarray(start, end + 1) });
+  });
+  await context.route('**/api/subtitles/**', route => route.fulfill({ json: { subtitle: null } }));
 }
 const test = base.extend<{ library: LibraryStore }>({
   library: async ({ context }, use) => {
@@ -38,69 +47,88 @@ async function addDriveVideo(page: Page, title = 'Nossa viagem', id = firstId, g
   await page.getByRole('button', { name: 'Adicionar à lista' }).click();
   await expect(page.getByRole('dialog')).not.toBeVisible();
 }
+function card(page: Page, title = 'Nossa viagem') {
+  return page.locator('.catalog-card').filter({ has: page.getByRole('heading', { name: title, exact: true }) });
+}
+async function watch(page: Page, title = 'Nossa viagem') {
+  await card(page, title).getByRole('link', { name: `Assistir ${title}`, exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Sala de projeção', exact: true })).toBeVisible();
+}
 
-test('inicia sem demonstrações, com a lista acima do player vazio', async ({ page }) => {
+test('catálogo editorial começa vazio, sem player, demonstrações ou conexão Google', async ({ page }) => {
   const requests: string[] = [];
   page.on('request', request => requests.push(request.url()));
   await page.goto('/');
-  await expect(page.getByRole('heading', { name: 'Seu próximo vídeo começa aqui' })).toBeVisible();
-  await expect(page.locator('h1')).toContainText('Seus vídeos');
-  await expect(page.locator('video,iframe,.video-card,.collection')).toHaveCount(0);
+  await expect(page.getByRole('heading', { name: 'THE METROPOLIS', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'O seu cinema começa aqui.' })).toBeVisible();
+  await expect(page.locator('video,iframe,.catalog-card')).toHaveCount(0);
   await expect(page.getByText('Lista salva no aplicativo', { exact: true })).toBeVisible();
-  const list = await page.getByRole('button', { name: 'Escolher vídeo' }).boundingBox();
-  const player = await page.locator('.player').boundingBox();
-  expect(list!.y + list!.height).toBeLessThan(player!.y);
-  expect(requests.some(url => url.includes('/media/'))).toBe(false);
+  await expect(page.getByRole('button', { name: /Conectar Drive|Sincronizar Drive/ })).toHaveCount(0);
+  expect(requests.some(url => /accounts\.google|googleapis\.com|\/api\/drive\/session|\/api\/drive\/media/.test(url))).toBe(false);
+  await expect.poll(() => page.locator('.catalog-welcome>img').evaluate(image => (image as HTMLImageElement).naturalWidth)).toBeGreaterThan(0);
 });
 
-test('links são salvos no aplicativo e aparecem em outro navegador sem localStorage', async ({ page, browser, library }) => {
+test('links aparecem no catálogo de outro navegador e persistem sem localStorage', async ({ page, browser, library }) => {
   await page.goto('/');
   await addDriveVideo(page);
   expect(library.videos[0].driveId).toBe(firstId);
   expect(library.writes).toBe(1);
+  await expect(card(page)).toHaveCount(1);
+  await expect(page.locator('video')).toHaveCount(0);
   await page.evaluate(() => localStorage.clear());
   await page.reload();
-  await expect(page.getByRole('heading', { name: 'Nossa viagem', exact: true })).toBeVisible();
+  await expect(card(page)).toHaveCount(1);
   const second = await browser.newContext();
   await libraryRoutes(second, library);
   const another = await second.newPage();
   await another.goto(page.url());
-  await expect(another.getByRole('heading', { name: 'Nossa viagem', exact: true })).toBeVisible();
-  expect(await another.evaluate(() => localStorage.getItem('muvies.library.v1'))).toContain(firstId);
+  await expect(card(another)).toHaveCount(1);
   await second.close();
 });
 
-test('listas por gênero, busca e seleção acima do player', async ({ page }) => {
+test('busca por título, direção e ano, gêneros e detalhes editoriais são funcionais', async ({ page, library }) => {
+  library.videos = [{ ...video(firstId, 'Nossa viagem'), director: 'Clara Monteiro', year: '1971', description: 'Uma história junto ao mar.' }, video('familyVideo12345', 'Almoço de domingo', 'Família')];
+  library.revision = 'existing';
   await page.goto('/');
-  await addDriveVideo(page);
-  await addDriveVideo(page, 'Almoço de domingo', 'familyVideo12345', 'Família');
-  await page.getByRole('button', { name: 'Viagens', exact: true }).click();
-  await page.getByRole('button', { name: 'Escolher vídeo' }).click();
-  await expect(page.locator('.select-video')).toHaveCount(1);
-  await page.getByLabel('Buscar vídeo').fill('viagem');
-  await page.locator('.select-video').click();
-  await expect(page.getByRole('heading', { name: 'Nossa viagem', exact: true })).toBeVisible();
-  await expect(page.locator('.dropdown')).not.toBeVisible();
+  await expect(page.locator('.catalog-card')).toHaveCount(2);
+  for (const query of ['viagem', 'Clara', '1971']) {
+    await page.getByRole('searchbox', { name: 'Buscar no catálogo' }).fill(query);
+    await expect(card(page)).toHaveCount(1);
+    await expect(page.locator('.catalog-card')).toHaveCount(1);
+  }
+  await page.getByRole('searchbox').fill('');
+  await page.getByRole('button', { name: 'Família', exact: true }).click();
+  await expect(card(page, 'Almoço de domingo')).toHaveCount(1);
+  await expect(card(page)).toHaveCount(0);
+  await page.getByRole('searchbox').fill('não existe');
+  await expect(page.getByRole('heading', { name: 'Nenhum filme encontrado', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Ver catálogo completo' }).click();
+  await expect(page.locator('.catalog-card')).toHaveCount(2);
 });
 
-test('edita e remove o último link sem reaparecer vídeo de demonstração', async ({ page, library }) => {
+test('edita detalhes e remove o último filme sem ressuscitar conteúdo', async ({ page, library }) => {
   await page.goto('/');
   await addDriveVideo(page);
-  await page.getByRole('button', { name: 'Editar Nossa viagem', exact: true }).click();
+  await card(page).getByRole('button', { name: 'Editar Nossa viagem', exact: true }).click();
   await page.getByLabel('Título', { exact: true }).fill('Férias em família');
   await page.getByLabel('Gênero', { exact: true }).fill('Família');
+  await page.getByText('Detalhes do filme (opcional)', { exact: true }).click();
+  await page.getByLabel('Direção', { exact: true }).fill('Clara Monteiro');
+  await page.getByLabel('Ano', { exact: true }).fill('2026');
+  await page.getByLabel('Sinopse', { exact: true }).fill('Acentos, ação e coração.\nUma nova linha.');
   await page.getByRole('button', { name: 'Salvar alterações' }).click();
-  await expect(page.getByRole('heading', { name: 'Férias em família', exact: true })).toBeVisible();
-  expect(library.videos[0].genre).toBe('Família');
-  await page.getByRole('button', { name: 'Editar Férias em família', exact: true }).click();
+  await expect(card(page, 'Férias em família')).toBeVisible();
+  expect(library.videos[0]).toMatchObject({ genre: 'Família', director: 'Clara Monteiro', year: '2026', description: 'Acentos, ação e coração.\nUma nova linha.' });
+  await page.reload();
+  await card(page, 'Férias em família').getByRole('button', { name: 'Editar Férias em família', exact: true }).click();
   await page.getByRole('button', { name: 'Remover', exact: true }).click();
-  await expect(page.getByRole('heading', { name: 'Seu próximo vídeo começa aqui' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'O seu cinema começa aqui.' })).toBeVisible();
   expect(library.videos).toEqual([]);
   await page.reload();
-  await expect(page.locator('video,iframe')).toHaveCount(0);
+  await expect(page.locator('.catalog-card,video,iframe')).toHaveCount(0);
 });
 
-test('rejeita links inválidos, evita duplicatas e preserva resourcekey', async ({ page, library }) => {
+test('rejeita links inválidos, evita duplicatas e preserva resourcekey ao abrir o player', async ({ page, library }) => {
   await page.goto('/');
   await page.getByRole('button', { name: 'Adicionar vídeo', exact: true }).click();
   await page.getByLabel('Link do vídeo').fill('https://example.com/file/d/1234567890abcdef/view');
@@ -116,25 +144,25 @@ test('rejeita links inválidos, evita duplicatas e preserva resourcekey', async 
   await page.getByLabel('Título', { exact: true }).fill('Outro nome');
   await page.getByRole('button', { name: 'Adicionar à lista' }).click();
   await expect(page.getByRole('dialog')).not.toBeVisible();
-  await page.reload();
+  await watch(page);
   await expect(page.locator('video')).toHaveAttribute('src', `/api/drive/media/${firstId}?resourceKey=shared-file-key`);
   expect(library.videos[0].title).toBe('Nossa viagem');
 });
 
-test('migra os links antigos do navegador uma vez sem ressuscitar uma lista apagada', async ({ context, page, library }) => {
+test('migra links antigos uma vez e preserva o catálogo intencionalmente vazio', async ({ context, page, library }) => {
   await context.addInitScript(record => localStorage.setItem('muvies.library.v1', JSON.stringify([record])), video(firstId, 'Link antigo'));
   await page.goto('/');
-  await expect(page.getByRole('heading', { name: 'Link antigo', exact: true })).toBeVisible();
+  await expect(card(page, 'Link antigo')).toBeVisible();
   expect(library.writes).toBe(1);
-  await page.getByRole('button', { name: 'Editar Link antigo', exact: true }).click();
+  await card(page, 'Link antigo').getByRole('button', { name: 'Editar Link antigo', exact: true }).click();
   await page.getByRole('button', { name: 'Remover', exact: true }).click();
-  await expect(page.getByRole('heading', { name: 'Seu próximo vídeo começa aqui' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'O seu cinema começa aqui.' })).toBeVisible();
   await page.reload();
-  await expect(page.getByRole('heading', { name: 'Seu próximo vídeo começa aqui' })).toBeVisible();
+  await expect(page.locator('.catalog-card')).toHaveCount(0);
   expect(library.videos).toEqual([]);
 });
 
-test('falha ao gravar mantém o formulário e não afirma que o link foi salvo', async ({ page, library }) => {
+test('falha ao gravar mantém formulário e permite tentar novamente', async ({ page, library }) => {
   await page.goto('/');
   await expect(page.getByText('Lista salva no aplicativo', { exact: true })).toBeVisible();
   library.failWrite = true;
@@ -151,130 +179,152 @@ test('falha ao gravar mantém o formulário e não afirma que o link foi salvo',
   expect(library.videos).toHaveLength(1);
 });
 
-test('conflitos não apagam links adicionados em outro aparelho', async ({ page, library }) => {
+test('conflitos não apagam filmes adicionados em outro aparelho', async ({ page, library }) => {
   await page.goto('/');
-  await expect(page.getByText('Lista salva no aplicativo', { exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Adicionar vídeo', exact: true }).click();
   await page.getByLabel('Link do vídeo').fill(`https://drive.google.com/file/d/${firstId}/view`);
-  await page.getByLabel('Título', { exact: true }).fill('Meu link');
+  await page.getByLabel('Título', { exact: true }).fill('Meu filme');
   library.conflictOnce = true;
   await page.getByRole('button', { name: 'Adicionar à lista' }).click();
   await expect(page.getByRole('alert')).toContainText('A lista mudou em outro aparelho');
   await page.getByRole('button', { name: 'Adicionar à lista' }).click();
   await expect(page.getByRole('dialog')).not.toBeVisible();
-  expect(library.videos.map(item => item.title)).toEqual(['Adicionado em outro aparelho', 'Meu link']);
+  expect(library.videos.map(item => item.title)).toEqual(['Adicionado em outro aparelho', 'Meu filme']);
 });
 
-test('listas abertas recebem alterações de outro aparelho e removem o vídeo excluído', async ({ page, library }) => {
+test('catálogo recebe adições e remoções da rede', async ({ page, library }) => {
   await page.goto('/');
   await addDriveVideo(page);
   library.videos.push(video('otherDeviceVideo', 'Recebido da rede'));
   library.revision = 'network-added';
   await page.evaluate(() => window.dispatchEvent(new Event('focus')));
-  await expect(page.locator('h1>span')).toHaveText('2');
+  await expect(page.locator('.catalog-card')).toHaveCount(2);
   library.videos = [];
   library.revision = 'network-cleared';
+  await page.bringToFront();
   await page.evaluate(() => window.dispatchEvent(new Event('focus')));
-  await expect(page.getByRole('heading', { name: 'Seu próximo vídeo começa aqui' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'O seu cinema começa aqui.' })).toBeVisible({ timeout: 10000 });
 });
 
-test('layout móvel e acesso por teclado', async ({ page }) => {
-  await page.setViewportSize({ width: 390, height: 844 });
+test('Minha lista persiste no aplicativo, sincroniza e não abre o player ao marcar', async ({ page, browser, library }) => {
+  library.videos = [video(firstId, 'Nossa viagem'), video('familyVideo12345', 'Almoço de domingo', 'Família')];
+  library.revision = 'existing';
   await page.goto('/');
-  await expect(page.getByRole('heading', { name: 'Seu próximo vídeo começa aqui' })).toBeVisible();
-  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
-  await page.getByRole('button', { name: 'Como funciona' }).click();
-  await expect(page.getByRole('dialog')).toBeVisible();
-  await page.keyboard.press('Escape');
-  await expect(page.getByRole('dialog')).not.toBeVisible();
-  await page.getByRole('button', { name: 'Escolher vídeo' }).click();
-  await expect(page.getByLabel('Buscar vídeo')).toBeFocused();
-  await page.keyboard.press('Escape');
-  await expect(page.locator('.dropdown')).not.toBeVisible();
-  await page.screenshot({ path: '/tmp/muvies-simple-mobile.png', fullPage: true });
-});
-
-test('importa o Drive com paginação preservando títulos e gêneros na lista compartilhada (Google simulado)', async ({ page, library }) => {
-  let releaseImport: (() => void) | undefined;
-  await page.addInitScript(() => {
-    (window as unknown as { google: unknown }).google = { accounts: { oauth2: { initTokenClient: (options: { scope: string; callback: (value: { access_token: string }) => void }) => {
-      if (options.scope !== 'https://www.googleapis.com/auth/drive.readonly') throw new Error('Unexpected scope');
-      return { requestAccessToken: () => options.callback({ access_token: 'test-token-not-a-real-credential' }) };
-    } } } };
-  });
-  await page.route('https://www.googleapis.com/drive/v3/files?*', async route => {
-    const second = new URL(route.request().url()).searchParams.get('pageToken');
-    if (!second) await new Promise<void>(resolve => { releaseImport = resolve; });
-    await route.fulfill({ json: second ? { files: [{ id: 'secondDriveVideo', name: 'Outro vídeo.mp4', mimeType: 'video/mp4' }] } : { files: [{ id: firstId, name: 'Original.mp4', mimeType: 'video/mp4' }], nextPageToken: 'next-page' } });
-  });
-  await page.goto('/');
-  await addDriveVideo(page);
-  await page.getByRole('button', { name: 'Conectar Drive', exact: true }).click();
-  await page.getByLabel('Client ID do Google').fill('example.apps.googleusercontent.com');
-  await page.getByRole('button', { name: 'Continuar com o Google' }).click();
-  await expect.poll(() => !!releaseImport).toBe(true);
-  library.videos.push(video('concurrentLanVideo', 'Adicionado durante a importação'));
-  library.revision = 'changed-during-oauth';
+  await card(page).getByRole('button', { name: 'Adicionar à Minha lista: Nossa viagem', exact: true }).click();
+  await expect(card(page).getByRole('button', { name: 'Remover da Minha lista: Nossa viagem', exact: true })).toHaveAttribute('aria-pressed', 'true');
+  expect(library.videos[0].favorite).toBe(true);
+  await expect(page.locator('video')).toHaveCount(0);
+  await page.reload();
+  await page.getByRole('button', { name: 'Minha lista', exact: false }).filter({ has: page.locator('span') }).click();
+  await expect(page.locator('.catalog-card')).toHaveCount(1);
+  const second = await browser.newContext();
+  await libraryRoutes(second, library);
+  const another = await second.newPage();
+  await another.goto(page.url());
+  await card(another).getByRole('button', { name: 'Remover da Minha lista: Nossa viagem', exact: true }).click();
   await page.evaluate(() => window.dispatchEvent(new Event('focus')));
-  await expect(page.locator('h1>span')).toHaveText('2');
-  releaseImport!();
-  await expect(page.getByRole('dialog')).not.toBeVisible();
-  expect(library.videos).toHaveLength(3);
-  expect(library.videos.some(item => item.title === 'Adicionado durante a importação')).toBe(true);
-  expect(library.videos[0]).toMatchObject({ title: 'Nossa viagem', genre: 'Viagens' });
-  expect(JSON.stringify(library)).not.toContain('test-token');
+  await expect(page.locator('.catalog-card')).toHaveCount(0);
+  await expect(page.getByText('Use o marcador de um filme para guardá-lo na Minha lista.')).toBeVisible();
+  await second.close();
 });
 
-test('migração concorrente carrega a biblioteca já salva sem bloquear a tela', async ({ context, page, library }) => {
-  library.conflictOnce = true;
-  await context.addInitScript(record => localStorage.setItem('muvies.library.v1', JSON.stringify([record])), video(firstId, 'Link antigo'));
+test('clique no filme abre o player, reproduz imediatamente e suporta voltar e avançar', async ({ page, library }) => {
+  library.videos = [video(firstId, 'Nossa viagem'), video('secondWatchVideo', 'Segundo filme')];
+  library.revision = 'existing';
   await page.goto('/');
-  await expect(page.getByRole('heading', { name: 'Adicionado em outro aparelho', exact: true })).toBeVisible();
-  await expect(page.getByText('Lista salva no aplicativo', { exact: true })).toBeVisible();
-  await expect(page.locator('.storage-problem')).toHaveCount(0);
-});
-
-test('vídeo inicial é interrompido quando a rede remove a seleção durante a reprodução', async ({ page, library }) => {
-  const original = await readFile(new URL('./fixtures/native-video.mp4', import.meta.url));
-  library.videos = [video(firstId, 'Vídeo inicial')];
-  library.revision = 'existing-library';
-  await page.route(`**/api/drive/media/${firstId}`, route => route.fulfill({ contentType: 'video/mp4', body: original }));
-  await page.goto('/');
-  await page.getByRole('button', { name: 'Reproduzir Vídeo inicial' }).click();
-  await expect.poll(() => page.locator('video').evaluate(video => (video as HTMLVideoElement).currentTime)).toBeGreaterThan(0);
-  library.videos = [video('newNetworkVideo', 'Nova seleção')];
-  library.revision = 'selection-removed';
-  await page.evaluate(() => window.dispatchEvent(new Event('focus')));
-  await expect(page.getByRole('button', { name: 'Reproduzir Nova seleção' })).toBeVisible();
-  expect(await page.locator('video').evaluate(video => (video as HTMLVideoElement).paused)).toBe(true);
-});
-
-test('player HTML5 reproduz e avança um original sem iframe, mantendo alternativa do Drive', async ({ page }) => {
-  const original = await readFile(new URL('./fixtures/native-video.mp4', import.meta.url));
-  await page.route(`**/api/drive/media/${firstId}`, route => route.fulfill({ contentType: 'video/mp4', body: original }));
-  await page.route(`https://drive.google.com/file/d/${firstId}/preview`, route => route.fulfill({ contentType: 'text/html', body: '<p>Player do Drive</p>' }));
-  await page.goto('/');
-  await addDriveVideo(page);
-  await page.getByRole('button', { name: 'Reproduzir Nossa viagem' }).click();
+  await watch(page, 'Segundo filme');
+  await expect(page).toHaveURL(/\?filme=drive-secondWatchVideo$/);
   await expect(page.locator('iframe')).toHaveCount(0);
   await expect.poll(() => page.locator('video').evaluate(video => (video as HTMLVideoElement).currentTime)).toBeGreaterThan(0);
   await page.locator('video').evaluate(video => { (video as HTMLVideoElement).currentTime = 3; });
   await expect.poll(() => page.locator('video').evaluate(video => (video as HTMLVideoElement).currentTime)).toBeGreaterThanOrEqual(3);
+  await page.getByRole('button', { name: 'Voltar ao catálogo', exact: true }).click();
+  await expect(page.locator('.catalog-card')).toHaveCount(2);
+  await expect(page.locator('video')).toHaveCount(0);
+  await page.goBack();
+  await expect(page.getByRole('button', { name: 'Reproduzir Segundo filme', exact: true })).toBeVisible();
+  await page.goBack();
+  await expect(page.locator('.catalog-card')).toHaveCount(2);
+  await page.goForward();
+  await expect(page.locator('video')).toHaveAttribute('src', '/api/drive/media/secondWatchVideo');
+});
+
+test('URL do filme identifica a seleção ao reabrir e acompanha trocas pelo menu', async ({ page, library }) => {
+  library.videos = [video(firstId, 'Nossa viagem'), video('secondWatchVideo', 'Segundo filme')];
+  library.revision = 'existing';
+  await page.goto('/?filme=drive-secondWatchVideo');
+  await expect(page.locator('video')).toHaveAttribute('src', '/api/drive/media/secondWatchVideo');
+  await page.getByRole('button', { name: 'Escolher vídeo', exact: true }).click();
+  await page.locator('.select-video').filter({ hasText: 'Nossa viagem' }).click();
+  await expect(page).toHaveURL(new RegExp(`filme=drive-${firstId}$`));
+  await page.reload();
+  await expect(page.locator('video')).toHaveAttribute('src', `/api/drive/media/${firstId}`);
+  await page.goto('/?filme=inexistente');
+  await expect(page.locator('.catalog-card')).toHaveCount(2);
+  await expect(page.locator('video')).toHaveCount(0);
+});
+
+test('remoção remota do filme em reprodução retorna ao catálogo sem tocar outro', async ({ page, library }) => {
+  library.videos = [video(firstId, 'Vídeo inicial')];
+  library.revision = 'existing';
+  await page.goto('/');
+  await watch(page, 'Vídeo inicial');
+  await expect.poll(() => page.locator('video').evaluate(video => (video as HTMLVideoElement).currentTime)).toBeGreaterThan(0);
+  library.videos = [video('newNetworkVideo', 'Nova seleção')];
+  library.revision = 'selection-removed';
+  await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+  await expect(card(page, 'Nova seleção')).toBeVisible();
+  await expect(page.locator('video')).toHaveCount(0);
+  await expect(page).not.toHaveURL(/filme=/);
+});
+
+test('layout móvel, ilustrações locais e navegação por teclado', async ({ page, library }) => {
+  library.videos = [{ ...video(firstId, 'Um filme com um título bastante longo e muitos detalhes'), director: 'Clara Monteiro', year: '2026', description: 'O cinema encontra uma história para a próxima sessão.' }];
+  library.revision = 'existing';
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('/');
+  await expect(page.locator('.catalog-card')).toHaveCount(1);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await expect.poll(() => page.locator('.card-art img').evaluate(img => (img as HTMLImageElement).naturalWidth)).toBeGreaterThan(0);
+  await page.screenshot({ path: '/tmp/muvies-editorial-mobile.png', fullPage: true });
+  await page.getByRole('button', { name: 'Como funciona' }).click();
+  await expect(page.getByRole('dialog')).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(page.getByRole('dialog')).not.toBeVisible();
+  const titleLink = page.locator('.catalog-card h3 a');
+  await titleLink.focus();
+  await page.keyboard.press('Enter');
+  await expect(page.getByRole('heading', { name: 'Sala de projeção', exact: true })).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await page.getByRole('button', { name: 'Escolher vídeo' }).click();
+  await expect(page.getByLabel('Buscar vídeo')).toBeFocused();
+  await page.keyboard.press('Escape');
+  await expect(page.locator('.dropdown')).not.toBeVisible();
+});
+
+test('mantém alternativa do Drive e erros públicos sem solicitar conexão ou Client ID', async ({ page, library }) => {
+  library.videos = [video(firstId, 'Nossa viagem')];
+  library.revision = 'existing';
+  let code = 'AUTH_REQUIRED';
+  await page.route(`**/api/drive/media/${firstId}`, route => route.fulfill({ status: code === 'AUTH_REQUIRED' ? 401 : 502, headers: { 'X-Muvies-Error': code }, json: { code } }));
+  await page.route(`https://drive.google.com/file/d/${firstId}/preview`, route => route.fulfill({ contentType: 'text/html', body: '<p>Player do Drive</p>' }));
+  await page.goto('/');
+  await watch(page);
+  await expect(page.locator('.player-error')).toContainText('Qualquer pessoa com o link');
+  await expect(page.getByRole('button', { name: /Conectar Drive|Sincronizar Drive/ })).toHaveCount(0);
+  code = 'PUBLIC_DOWNLOAD_UNAVAILABLE';
+  await page.getByRole('button', { name: 'Recarregar player', exact: true }).click();
+  await expect(page.locator('.player-error')).toContainText('download público');
   await page.getByRole('button', { name: 'Player do Drive', exact: true }).click();
-  await page.getByRole('button', { name: 'Reproduzir Nossa viagem' }).click();
+  await page.getByRole('button', { name: 'Reproduzir Nossa viagem', exact: true }).click();
   await expect(page.locator('iframe')).toHaveAttribute('src', `https://drive.google.com/file/d/${firstId}/preview`);
 });
 
-test('login real e falha pública têm orientações diferentes', async ({ page }) => {
-  let code = 'AUTH_REQUIRED';
-  await page.route(`**/api/drive/media/${firstId}`, route => route.fulfill({ status: code === 'AUTH_REQUIRED' ? 401 : 502, headers: { 'X-Muvies-Error': code }, json: { code } }));
+test('migração concorrente usa o arquivo já salvo em vez de bloquear a tela', async ({ context, page, library }) => {
+  library.conflictOnce = true;
+  await context.addInitScript(record => localStorage.setItem('muvies.library.v1', JSON.stringify([record])), video(firstId, 'Link antigo'));
   await page.goto('/');
-  await addDriveVideo(page);
-  await page.getByRole('button', { name: 'Reproduzir Nossa viagem' }).click();
-  await expect(page.locator('.player-error')).toContainText('O Google está exigindo login');
-  await expect(page.locator('.player-error').getByRole('button', { name: 'Conectar Drive', exact: true })).toBeVisible();
-  code = 'PUBLIC_DOWNLOAD_UNAVAILABLE';
-  await page.getByRole('button', { name: 'Recarregar player', exact: true }).click();
-  await expect(page.locator('.player-error')).toContainText('Não é necessário configurar Client ID');
-  await expect(page.locator('.player-error').getByRole('button', { name: 'Conectar Drive', exact: true })).toHaveCount(0);
+  await expect(card(page, 'Adicionado em outro aparelho')).toBeVisible();
+  await expect(page.getByText('Lista salva no aplicativo', { exact: true })).toBeVisible();
+  await expect(page.locator('.catalog-problem')).toHaveCount(0);
 });

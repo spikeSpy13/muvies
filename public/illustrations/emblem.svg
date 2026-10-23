@@ -1,0 +1,49 @@
+<svg xmlns="http://www.w3.org/2000/svg"  viewBox="0 0 120 120" fill="none" aria-label="Emblema The Metropolis">
+<defs>
+
+            <filter id="brush-stroke" x="-10%" y="-10%" width="120%" height="120%" filterUnits="objectBoundingBox">
+                <feTurbulence type="fractalNoise" baseFrequency="0.045 0.06" numOctaves="3" seed="14" result="noise" ></feTurbulence>
+                <feDisplacementMap in="SourceGraphic" in2="noise" scale="3.2" xChannelSelector="R" yChannelSelector="G" result="displaced" ></feDisplacementMap>
+                <feComponentTransfer in="displaced">
+                    <feFuncA type="linear" slope="1.05" intercept="-0.02" ></feFuncA>
+                </feComponentTransfer>
+            </filter>
+
+
+            <filter id="ink-edge" x="-5%" y="-5%" width="110%" height="110%">
+                <feTurbulence type="turbulence" baseFrequency="0.03 0.08" numOctaves="4" seed="7" result="rough" ></feTurbulence>
+                <feDisplacementMap in="SourceGraphic" in2="rough" scale="2.4" xChannelSelector="R" yChannelSelector="G" result="inked" ></feDisplacementMap>
+                <feComponentTransfer in="inked">
+                    <feFuncA type="discrete" tableValues="0 0.2 0.85 1" ></feFuncA>
+                </feComponentTransfer>
+            </filter>
+
+
+            <filter id="watercolor-wash" x="-15%" y="-15%" width="130%" height="130%">
+                <feTurbulence type="fractalNoise" baseFrequency="0.025" numOctaves="4" seed="21" result="washNoise" ></feTurbulence>
+                <feDisplacementMap in="SourceGraphic" in2="washNoise" scale="9" xChannelSelector="R" yChannelSelector="B" result="washed" ></feDisplacementMap>
+                <feGaussianBlur in="washed" stdDeviation="0.6" ></feGaussianBlur>
+            </filter>
+
+
+            <pattern id="ink-hatch" width="8" height="8" patternTransform="rotate(35 0 0)" patternUnits="userSpaceOnUse">
+                <line x1="0" y1="0" x2="0" y2="8" stroke="#141413" stroke-width="0.9" stroke-opacity="0.22" ></line>
+            </pattern>
+            <pattern id="red-hatch" width="6" height="6" patternTransform="rotate(-40 0 0)" patternUnits="userSpaceOnUse">
+                <line x1="0" y1="0" x2="0" y2="6" stroke="#C8372D" stroke-width="0.8" stroke-opacity="0.28" ></line>
+            </pattern>
+        </defs><style>.brush-stroke{filter:url(#brush-stroke)}.ink-edge{filter:url(#ink-edge)}.watercolor-wash{filter:url(#watercolor-wash)}.hero-rain-line{stroke-dasharray:12 8}</style>
+
+                    <circle cx="60" cy="62" r="42" fill="#D49B35" fill-opacity="0.18" class="watercolor-wash"></circle>
+
+                    <path d="M32 54 C45 52, 75 52, 92 50" stroke="#141413" stroke-width="3.2" stroke-linecap="round"></path>
+                    <path d="M42 52 L38 22 C48 18, 70 18, 78 22 L76 51" fill="#141413" stroke="#141413" stroke-width="2" stroke-linejoin="round"></path>
+
+                    <path d="M41 46 C53 45, 65 45, 76 46" stroke="#C8372D" stroke-width="4" stroke-linecap="round"></path>
+
+                    <path d="M48 54 C46 64, 48 73, 56 78 L50 96 L74 96 L68 76 C75 72, 79 65, 76 54" stroke="#141413" stroke-width="2.4" stroke-linecap="round"></path>
+
+                    <circle cx="75" cy="62" r="9" fill="#FBF9F5" stroke="#C8372D" stroke-width="2.4"></circle>
+                    <path d="M84 60 L106 50 M84 64 L106 72" stroke="#D49B35" stroke-width="1.8" stroke-dasharray="3 3" stroke-linecap="round"></path>
+                    <path d="M68 68 C65 78, 66 86, 62 95" stroke="#141413" stroke-width="1.4" stroke-dasharray="2 2"></path>
+                </svg>

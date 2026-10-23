@@ -1,0 +1,137 @@
+<svg xmlns="http://www.w3.org/2000/svg"  viewBox="0 0 800 550" fill="none">
+<defs>
+
+            <filter id="brush-stroke" x="-10%" y="-10%" width="120%" height="120%" filterUnits="objectBoundingBox">
+                <feTurbulence type="fractalNoise" baseFrequency="0.045 0.06" numOctaves="3" seed="14" result="noise" ></feTurbulence>
+                <feDisplacementMap in="SourceGraphic" in2="noise" scale="3.2" xChannelSelector="R" yChannelSelector="G" result="displaced" ></feDisplacementMap>
+                <feComponentTransfer in="displaced">
+                    <feFuncA type="linear" slope="1.05" intercept="-0.02" ></feFuncA>
+                </feComponentTransfer>
+            </filter>
+
+
+            <filter id="ink-edge" x="-5%" y="-5%" width="110%" height="110%">
+                <feTurbulence type="turbulence" baseFrequency="0.03 0.08" numOctaves="4" seed="7" result="rough" ></feTurbulence>
+                <feDisplacementMap in="SourceGraphic" in2="rough" scale="2.4" xChannelSelector="R" yChannelSelector="G" result="inked" ></feDisplacementMap>
+                <feComponentTransfer in="inked">
+                    <feFuncA type="discrete" tableValues="0 0.2 0.85 1" ></feFuncA>
+                </feComponentTransfer>
+            </filter>
+
+
+            <filter id="watercolor-wash" x="-15%" y="-15%" width="130%" height="130%">
+                <feTurbulence type="fractalNoise" baseFrequency="0.025" numOctaves="4" seed="21" result="washNoise" ></feTurbulence>
+                <feDisplacementMap in="SourceGraphic" in2="washNoise" scale="9" xChannelSelector="R" yChannelSelector="B" result="washed" ></feDisplacementMap>
+                <feGaussianBlur in="washed" stdDeviation="0.6" ></feGaussianBlur>
+            </filter>
+
+
+            <pattern id="ink-hatch" width="8" height="8" patternTransform="rotate(35 0 0)" patternUnits="userSpaceOnUse">
+                <line x1="0" y1="0" x2="0" y2="8" stroke="#141413" stroke-width="0.9" stroke-opacity="0.22" ></line>
+            </pattern>
+            <pattern id="red-hatch" width="6" height="6" patternTransform="rotate(-40 0 0)" patternUnits="userSpaceOnUse">
+                <line x1="0" y1="0" x2="0" y2="6" stroke="#C8372D" stroke-width="0.8" stroke-opacity="0.28" ></line>
+            </pattern>
+        </defs><style>.brush-stroke{filter:url(#brush-stroke)}.ink-edge{filter:url(#ink-edge)}.watercolor-wash{filter:url(#watercolor-wash)}.hero-rain-line{stroke-dasharray:12 8}</style>
+
+                                <rect width="800" height="550" fill="#181715"></rect>
+
+
+                                <g class="watercolor-wash">
+                                    <ellipse cx="260" cy="210" rx="185" ry="140" fill="#C8372D" fill-opacity="0.28"></ellipse>
+                                    <ellipse cx="430" cy="340" rx="190" ry="130" fill="#D49B35" fill-opacity="0.22"></ellipse>
+                                    <circle cx="210" cy="390" r="110" fill="#C8372D" fill-opacity="0.2"></circle>
+                                </g>
+
+
+                                <g class="brush-stroke" opacity="0.9">
+
+                                    <rect x="60" y="95" width="160" height="420" fill="#23221F" stroke="#FBF9F5" stroke-width="1.5"></rect>
+
+                                    <polygon points="105,52 140,30 175,52" fill="#141413" stroke="#FBF9F5" stroke-width="1.5"></polygon>
+                                    <rect x="110" y="52" width="60" height="32" fill="#2A2825" stroke="#FBF9F5" stroke-width="1.5"></rect>
+                                    <line x1="118" y1="84" x2="112" y2="95" stroke="#FBF9F5" stroke-width="1.5"></line>
+                                    <line x1="162" y1="84" x2="168" y2="95" stroke="#FBF9F5" stroke-width="1.5"></line>
+
+
+                                    <rect x="85" y="130" width="24" height="36" fill="#D49B35" fill-opacity="0.85"></rect>
+                                    <rect x="125" y="130" width="24" height="36" fill="#141413" stroke="#FBF9F5" stroke-width="0.9"></rect>
+                                    <rect x="165" y="130" width="24" height="36" fill="#D49B35" fill-opacity="0.45"></rect>
+                                    <rect x="85" y="190" width="24" height="36" fill="#C8372D" fill-opacity="0.8"></rect>
+                                    <rect x="125" y="190" width="24" height="36" fill="#D49B35" fill-opacity="0.9"></rect>
+                                    <rect x="165" y="190" width="24" height="36" fill="#141413" stroke="#FBF9F5" stroke-width="0.9"></rect>
+                                    <rect x="85" y="250" width="24" height="36" fill="#141413" stroke="#FBF9F5" stroke-width="0.9"></rect>
+                                    <rect x="125" y="250" width="24" height="36" fill="#C8372D" fill-opacity="0.7"></rect>
+
+
+                                    <rect x="250" y="65" width="195" height="450" fill="#1E1D1A" stroke="#FBF9F5" stroke-width="1.6"></rect>
+
+                                    <path d="M265 140 L345 140 L265 210 L345 210 L265 280 L345 280 L265 350" stroke="#FBF9F5" stroke-width="1.4" stroke-opacity="0.65"></path>
+
+
+                                    <g class="neon-reflection">
+                                        <rect x="370" y="135" width="42" height="190" rx="4" fill="#C8372D" stroke="#FBF9F5" stroke-width="1.8"></rect>
+                                        <circle cx="391" cy="165" r="9" fill="#FBF9F5"></circle>
+                                        <path d="M380 195 H402 M380 225 H402 M380 255 H402 M385 285 H397" stroke="#FBF9F5" stroke-width="3" stroke-linecap="round"></path>
+
+                                        <ellipse cx="391" cy="230" rx="55" ry="115" fill="#C8372D" fill-opacity="0.32" class="watercolor-wash"></ellipse>
+                                    </g>
+
+
+                                    <path d="M60 465 Q240 455 460 470" stroke="#D49B35" stroke-width="5" stroke-linecap="round" opacity="0.65"></path>
+                                    <path d="M110 485 Q280 480 430 490" stroke="#C8372D" stroke-width="7" stroke-linecap="round" opacity="0.7"></path>
+                                    <path d="M85 505 Q260 502 450 510" stroke="#FBF9F5" stroke-width="2" stroke-linecap="round" opacity="0.4"></path>
+                                </g>
+
+
+                                <g opacity="0.55">
+                                    <line x1="120" y1="20" x2="50" y2="480" stroke="#FBF9F5" stroke-width="1.2" class="hero-rain-line"></line>
+                                    <line x1="210" y1="10" x2="140" y2="490" stroke="#FBF9F5" stroke-width="1" class="hero-rain-line"></line>
+                                    <line x1="310" y1="30" x2="240" y2="500" stroke="#D49B35" stroke-width="1.3" class="hero-rain-line"></line>
+                                    <line x1="410" y1="15" x2="340" y2="485" stroke="#C8372D" stroke-width="1.4" class="hero-rain-line"></line>
+                                    <line x1="480" y1="40" x2="410" y2="510" stroke="#FBF9F5" stroke-width="1" class="hero-rain-line"></line>
+                                </g>
+
+
+                                <g stroke="#141413" stroke-width="6">
+                                    <line x1="0" y1="18" x2="800" y2="18"></line>
+                                    <line x1="0" y1="34" x2="800" y2="34"></line>
+                                    <line x1="0" y1="50" x2="800" y2="50"></line>
+                                    <line x1="0" y1="66" x2="800" y2="66"></line>
+                                </g>
+
+                                <path d="M475 10 L475 240" stroke="#FBF9F5" stroke-width="1.5" stroke-dasharray="3 2" opacity="0.7"></path>
+                                <circle cx="475" cy="245" r="5" fill="#D49B35"></circle>
+
+
+                                <rect x="0" y="0" width="45" height="550" fill="#141413"></rect>
+                                <rect x="745" y="0" width="55" height="550" fill="#141413"></rect>
+                                <rect x="0" y="515" width="800" height="35" fill="#141413"></rect>
+                                <line x1="45" y1="295" x2="540" y2="295" stroke="#141413" stroke-width="10"></line>
+
+
+                                <g class="brush-stroke svg-transition group-hover:translate-x-[-6px]">
+
+                                    <path d="M532 135 C512 138, 502 155, 504 176 C492 182, 488 190, 495 196 C502 215, 506 232, 518 242 L475 278 L442 365 L485 545" stroke="#D49B35" stroke-width="4.5" stroke-linecap="round"></path>
+                                    <path d="M480 172 L578 164" stroke="#C8372D" stroke-width="4" stroke-linecap="round"></path>
+
+
+                                    <path d="M540 132 C515 132, 505 150, 507 174 L478 175 C495 184, 520 185, 585 170 L572 138 Z" fill="#141413"></path>
+                                    <path d="M512 175 C508 205, 514 228, 528 240 L478 275 L440 385 L465 550 L755 550 L735 265 L645 232 C645 202, 625 172, 580 172 Z" fill="#141413"></path>
+
+
+                                    <path d="M525 235 L555 205 L615 225 L585 270 Z" fill="#141413" stroke="#FBF9F5" stroke-width="1.8"></path>
+
+                                    <rect x="462" y="205" width="38" height="22" rx="6" fill="#141413" stroke="#FBF9F5" stroke-width="2"></rect>
+                                    <circle cx="466" cy="216" r="8" fill="#C8372D"></circle>
+                                    <circle cx="466" cy="216" r="3.5" fill="#FBF9F5"></circle>
+
+
+                                    <path d="M445 255 Q425 225 442 195 T432 135" stroke="#FBF9F5" stroke-width="1.6" stroke-linecap="round" opacity="0.55" fill="none"></path>
+                                </g>
+
+
+                                <text x="655" y="502" fill="#FBF9F5" opacity="0.65" font-family="Cormorant Garamond, serif" font-style="italic" font-size="16">
+                                    V. Moreau ’26
+                                </text>
+                            </svg>

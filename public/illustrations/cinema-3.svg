@@ -1,0 +1,67 @@
+<svg xmlns="http://www.w3.org/2000/svg"  viewBox="0 0 400 300" fill="none">
+<defs>
+
+            <filter id="brush-stroke" x="-10%" y="-10%" width="120%" height="120%" filterUnits="objectBoundingBox">
+                <feTurbulence type="fractalNoise" baseFrequency="0.045 0.06" numOctaves="3" seed="14" result="noise" ></feTurbulence>
+                <feDisplacementMap in="SourceGraphic" in2="noise" scale="3.2" xChannelSelector="R" yChannelSelector="G" result="displaced" ></feDisplacementMap>
+                <feComponentTransfer in="displaced">
+                    <feFuncA type="linear" slope="1.05" intercept="-0.02" ></feFuncA>
+                </feComponentTransfer>
+            </filter>
+
+
+            <filter id="ink-edge" x="-5%" y="-5%" width="110%" height="110%">
+                <feTurbulence type="turbulence" baseFrequency="0.03 0.08" numOctaves="4" seed="7" result="rough" ></feTurbulence>
+                <feDisplacementMap in="SourceGraphic" in2="rough" scale="2.4" xChannelSelector="R" yChannelSelector="G" result="inked" ></feDisplacementMap>
+                <feComponentTransfer in="inked">
+                    <feFuncA type="discrete" tableValues="0 0.2 0.85 1" ></feFuncA>
+                </feComponentTransfer>
+            </filter>
+
+
+            <filter id="watercolor-wash" x="-15%" y="-15%" width="130%" height="130%">
+                <feTurbulence type="fractalNoise" baseFrequency="0.025" numOctaves="4" seed="21" result="washNoise" ></feTurbulence>
+                <feDisplacementMap in="SourceGraphic" in2="washNoise" scale="9" xChannelSelector="R" yChannelSelector="B" result="washed" ></feDisplacementMap>
+                <feGaussianBlur in="washed" stdDeviation="0.6" ></feGaussianBlur>
+            </filter>
+
+
+            <pattern id="ink-hatch" width="8" height="8" patternTransform="rotate(35 0 0)" patternUnits="userSpaceOnUse">
+                <line x1="0" y1="0" x2="0" y2="8" stroke="#141413" stroke-width="0.9" stroke-opacity="0.22" ></line>
+            </pattern>
+            <pattern id="red-hatch" width="6" height="6" patternTransform="rotate(-40 0 0)" patternUnits="userSpaceOnUse">
+                <line x1="0" y1="0" x2="0" y2="6" stroke="#C8372D" stroke-width="0.8" stroke-opacity="0.28" ></line>
+            </pattern>
+        </defs><style>.brush-stroke{filter:url(#brush-stroke)}.ink-edge{filter:url(#ink-edge)}.watercolor-wash{filter:url(#watercolor-wash)}.hero-rain-line{stroke-dasharray:12 8}</style>
+                        <rect width="400" height="300" fill="#F4EFE6"></rect>
+                        <circle cx="200" cy="145" r="105" fill="#D49B35" fill-opacity="0.2" class="watercolor-wash"></circle>
+
+                        <g class="brush-stroke">
+
+                            <rect x="95" y="152" width="210" height="22" rx="8" fill="#141413"></rect>
+                            <circle cx="85" cy="163" r="9" fill="#C8372D" stroke="#141413" stroke-width="2"></circle>
+                            <circle cx="315" cy="163" r="9" fill="#C8372D" stroke="#141413" stroke-width="2"></circle>
+
+                            <path d="M135 155 L125 65 L275 55 L265 155 Z" fill="#FBF9F5" stroke="#141413" stroke-width="2.2"></path>
+
+                            <line x1="150" y1="85" x2="245" y2="80" stroke="#141413" stroke-width="2"></line>
+                            <line x1="152" y1="102" x2="235" y2="98" stroke="#C8372D" stroke-width="2"></line>
+                            <line x1="155" y1="118" x2="250" y2="114" stroke="#141413" stroke-width="2"></line>
+
+                            <path d="M105 174 L85 255 L315 255 L295 174 Z" fill="#141413"></path>
+                            <rect x="125" y="186" width="150" height="22" rx="4" fill="#C8372D"></rect>
+
+                            <g fill="#FBF9F5" stroke="#141413" stroke-width="1.5">
+                                <circle cx="130" cy="228" r="7"></circle><circle cx="152" cy="228" r="7"></circle><circle cx="174" cy="228" r="7"></circle>
+                                <circle cx="196" cy="228" r="7"></circle><circle cx="218" cy="228" r="7"></circle><circle cx="240" cy="228" r="7"></circle><circle cx="262" cy="228" r="7"></circle>
+                                <circle cx="140" cy="244" r="7"></circle><circle cx="164" cy="244" r="7"></circle><circle cx="188" cy="244" r="7"></circle>
+                                <circle cx="212" cy="244" r="7"></circle><circle cx="236" cy="244" r="7"></circle><circle cx="260" cy="244" r="7"></circle>
+                            </g>
+                        </g>
+
+                        <g class="brush-stroke svg-transition svg-anim-float">
+                            <path d="M180 55 Q195 35 212 48 Q228 32 245 50" stroke="#141413" stroke-width="2.5" fill="none" stroke-linecap="round"></path>
+                            <path d="M245 32 Q260 14 275 28 Q290 12 306 28" stroke="#C8372D" stroke-width="2.5" fill="none" stroke-linecap="round"></path>
+                            <path d="M115 42 Q128 26 142 38 Q156 24 170 38" stroke="#141413" stroke-width="2" fill="none" stroke-linecap="round"></path>
+                        </g>
+                    </svg>

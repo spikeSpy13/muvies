@@ -34,6 +34,10 @@ function normalizeVideos(value) {
       || typeof video.driveId !== 'string' || !FILE_ID.test(video.driveId)) throw invalid();
     if (video.resourceKey !== undefined && (typeof video.resourceKey !== 'string' || !RESOURCE_KEY.test(video.resourceKey))) throw invalid();
     if (video.duration !== undefined && !text(video.duration, 64)) throw invalid();
+    if (video.director !== undefined && !text(video.director, 200)) throw invalid();
+    if (video.year !== undefined && (typeof video.year !== 'string' || !/^\d{4}$/.test(video.year))) throw invalid();
+    if (video.description !== undefined && (typeof video.description !== 'string' || !video.description.trim() || video.description.length > 3000 || /[\u0000-\u0008\u000b\u000c\u000e-\u001f]/.test(video.description))) throw invalid();
+    if (video.favorite !== undefined && typeof video.favorite !== 'boolean') throw invalid();
     if (ids.has(video.id) && ids.get(video.id) !== video.driveId) throw invalid();
     if (ids.has(video.id) || files.has(video.driveId)) continue;
     ids.set(video.id, video.driveId);
@@ -47,6 +51,10 @@ function normalizeVideos(value) {
       ...(video.resourceKey ? { resourceKey: video.resourceKey } : {}),
       url: `https://drive.google.com/file/d/${video.driveId}/preview`,
       ...(video.duration ? { duration: video.duration } : {}),
+      ...(video.director ? { director: video.director.trim() } : {}),
+      ...(video.year ? { year: video.year } : {}),
+      ...(video.description ? { description: video.description.trim() } : {}),
+      ...(video.favorite ? { favorite: true } : {}),
     });
   }
   return videos;

@@ -9,6 +9,9 @@ export type Video = {
   poster?: string;
   description?: string;
   duration?: string;
+  director?: string;
+  year?: string;
+  favorite?: boolean;
 };
 
 const storageKey = 'muvies.library.v1';
@@ -51,76 +54,13 @@ export function drivePreviewUrl(video: Video): string {
 }
 
 export const playbackErrors: Record<string, string> = {
-  AUTH_REQUIRED: 'O Google está exigindo login para baixar este arquivo. Confira se o link permite acesso e download sem login, ou conecte uma conta com acesso.',
-  PUBLIC_DOWNLOAD_UNAVAILABLE: 'O Google não liberou o download público deste link. Abra o arquivo no Drive e confira se ele pode ser baixado sem login. Não é necessário configurar Client ID para um download público disponível.',
+  AUTH_REQUIRED: 'O Google está exigindo login para baixar este arquivo. Compartilhe o vídeo como “Qualquer pessoa com o link” e permita o download no Drive, ou abra o arquivo diretamente no Google.',
+  PUBLIC_DOWNLOAD_UNAVAILABLE: 'O Google não liberou o download público deste link. Abra o arquivo no Drive e confira se ele pode ser baixado sem login, ou tente o player alternativo.',
   DRIVE_BLOCKED: 'O Google bloqueou o download deste arquivo. Abra o arquivo no Drive para consultar o motivo.',
-  DRIVE_FORBIDDEN: 'Sua conta não pode baixar este arquivo ou o Drive limitou os downloads. Confira as permissões do arquivo no Drive.',
-  DRIVE_NOT_FOUND: 'Arquivo não encontrado ou sem acesso nesta conta Google.',
+  DRIVE_FORBIDDEN: 'O download deste arquivo foi bloqueado ou limitado pelo Drive. Confira as permissões do link no Google.',
+  DRIVE_NOT_FOUND: 'Arquivo não encontrado ou sem acesso público por este link.',
   DRIVE_LIMIT: 'O Drive limitou os downloads. Aguarde e tente novamente.',
   DRIVE_UNAVAILABLE: 'Não foi possível receber o original do Drive. Verifique a conexão e tente novamente.',
   NOT_VIDEO: 'O Drive não retornou um arquivo de vídeo reproduzível.',
   LOCAL_ONLY: 'Abra o Muvies no servidor local para reproduzir o arquivo original.',
 };
-
-type DriveFile = { id: string; name: string; mimeType: string; resourceKey?: string; videoMediaMetadata?: { durationMillis?: string } };
-type TokenResponse = { access_token?: string; expires_in?: number | string; error?: string };
-type Identity = { accounts: { oauth2: { initTokenClient: (options: {
-  client_id: string; scope: string; callback: (response: TokenResponse) => void;
-  error_callback: (error: { type: string }) => void;
-}) => { requestAccessToken: () => void } } } };
-declare global { interface Window { google?: Identity } }
-
-export async function loadGoogleIdentity(): Promise<void> {
-  if (window.google?.accounts.oauth2) return;
-  await new Promise<void>((resolve, reject) => {
-    const existing = document.getElementById('google-identity');
-    if (existing) existing.remove();
-    const script = document.createElement('script');
-    script.id = 'google-identity';
-    script.src = 'https://accounts.google.com/gsi/client';
-    script.async = true;
-    script.onload = () => resolve();
-    script.onerror = () => { script.remove(); reject(new Error('Não foi possível carregar o login do Google. Verifique sua conexão.')); };
-    document.head.appendChild(script);
-  });
-}
-
-export function authorizeDrive(clientId: string): Promise<{ token: string; expiresIn: number }> {
-  return new Promise((resolve, reject) => {
-    if (!window.google?.accounts.oauth2) return reject(new Error('O login do Google não está disponível.'));
-    window.google.accounts.oauth2.initTokenClient({
-      client_id: clientId,
-      scope: 'https://www.googleapis.com/auth/drive.readonly',
-      callback: response => response.access_token ? resolve({ token: response.access_token, expiresIn: Number(response.expires_in || 3600) }) : reject(new Error('A autorização do Drive não foi concluída.')),
-      error_callback: () => reject(new Error('O login foi fechado ou bloqueado. Permita o popup e tente novamente.')),
-    }).requestAccessToken();
-  });
-}
-
-export async function listDriveVideos(token: string): Promise<Video[]> {
-  const videos: Video[] = [];
-  let pageToken = '';
-  do {
-    const params = new URLSearchParams({
-      q: "trashed = false and mimeType contains 'video/'", pageSize: '100',
-      fields: 'nextPageToken,files(id,name,mimeType,resourceKey,videoMediaMetadata/durationMillis)',
-      orderBy: 'name', ...(pageToken ? { pageToken } : {}),
-    });
-    const response = await fetch(`https://www.googleapis.com/drive/v3/files?${params}`, { headers: { Authorization: `Bearer ${token}` } });
-    if (!response.ok) throw new Error(response.status === 403
-      ? 'Acesso negado. Confira se a API Google Drive está ativada no projeto Google Cloud e se sua conta tem permissão.'
-      : 'Não foi possível listar os vídeos do Drive. Conecte novamente e tente outra vez.');
-    const data: { files: DriveFile[]; nextPageToken?: string } = await response.json();
-    videos.push(...data.files.map(file => {
-      const seconds = Math.floor(Number(file.videoMediaMetadata?.durationMillis || 0) / 1000);
-      return {
-        id: `drive-${file.id}`, driveId: file.id, resourceKey: file.resourceKey, title: file.name.replace(/\.[^.]+$/, ''),
-        genre: 'Sem gênero', source: 'drive' as const,
-        url: `https://drive.google.com/file/d/${file.id}/preview`,
-        duration: seconds ? `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}` : undefined,
-      };
-    }));
-    pageToken = data.nextPageToken || '';
-  } while (pageToken);
-  return videos;
-}
