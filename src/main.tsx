@@ -1,8 +1,9 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { Check, ChevronDown, CircleHelp, ExternalLink, Film, Info, Link, ListVideo, LoaderCircle, Maximize, Pencil, Play, Plus, RefreshCw, Search, ShieldCheck, Trash2, X } from 'lucide-react';
+import { Captions, Check, ChevronDown, CircleHelp, ExternalLink, Film, Info, Link, ListVideo, LoaderCircle, Maximize, Pencil, Play, Plus, RefreshCw, Search, ShieldCheck, Trash2, Upload, X } from 'lucide-react';
 import { authorizeDrive, driveMediaUrl, drivePreviewUrl, driveViewUrl, getSavedVideos, listDriveVideos, loadGoogleIdentity, parseDriveId, playbackErrors, saveVideos, type Video } from './library';
 import { LibraryError, readLibrary, writeLibrary, type LibrarySnapshot } from './storage';
+import { useSubtitles } from './subtitles';
 import './styles.css';
 
 type Modal = 'add' | 'connect' | 'help' | 'edit' | null;
@@ -51,12 +52,19 @@ function App() {
   const [clientId, setClientId] = useState(() => savedValue('muvies.google-client-id'));
   const [connected, setConnected] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
+  const trackRef = useRef<HTMLTrackElement>(null);
+  const subtitleInputRef = useRef<HTMLInputElement>(null);
+  const playbackModeRef = useRef(playbackMode);
+  playbackModeRef.current = playbackMode;
   const playerRef = useRef<HTMLDivElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const modalRef = useRef<HTMLDialogElement>(null);
   const playAttempt = useRef(0);
   const diagnosedAttempt = useRef(-1);
   const active = saved.find(video => video.id === activeId) || saved[0] || null;
+  const subtitles = useSubtitles(active?.driveId);
+  const subtitleEnabled = useRef(subtitles.enabled);
+  subtitleEnabled.current = subtitles.enabled;
   const genres = [...new Set(saved.map(video => video.genre))];
   const currentGenre = genres.includes(genre) ? genre : 'Todos';
   const filtered = saved.filter(video => currentGenre === 'Todos' || video.genre === currentGenre);
@@ -142,6 +150,30 @@ function App() {
       .then(data => { if (!cancelled && data?.connected) setConnected(true); }).catch(() => {});
     return () => { cancelled = true; };
   }, []);
+  useEffect(() => {
+    if (trackRef.current) trackRef.current.track.mode = subtitles.enabled ? 'showing' : 'disabled';
+  }, [subtitles.enabled, subtitles.trackUrl, playbackMode]);
+  useEffect(() => {
+    const tracks = videoRef.current?.textTracks;
+    if (!tracks) return;
+    const changed = () => {
+      if (trackRef.current?.readyState === 2) subtitles.setEnabled(trackRef.current.track.mode === 'showing');
+    };
+    tracks.addEventListener('change', changed);
+    return () => tracks.removeEventListener('change', changed);
+  }, [active?.id, subtitles.trackUrl, playbackMode]);
+  useEffect(() => {
+    const track = trackRef.current;
+    if (!track) return;
+    const loaded = () => { track.track.mode = subtitleEnabled.current ? 'showing' : 'disabled'; subtitles.trackLoaded(); };
+    const failed = () => subtitles.trackFailed();
+    track.addEventListener('load', loaded);
+    track.addEventListener('error', failed);
+    // A cached track can finish loading before the effect installs its listeners.
+    if (track.readyState === 2) loaded();
+    else if (track.readyState === 3) failed();
+    return () => { track.removeEventListener('load', loaded); track.removeEventListener('error', failed); };
+  }, [subtitles.trackUrl, playbackMode]);
   useEffect(() => {
     if (!toast) return;
     const timer = setTimeout(() => setToast(''), 5000);
@@ -266,6 +298,18 @@ function App() {
     if (playbackMode === 'drive') setDriveFrameVersion(version => version + 1);
     else { videoRef.current?.load(); void startPlayback(); }
   }
+  async function uploadSubtitle(event: React.ChangeEvent<HTMLInputElement>) {
+    const file = event.currentTarget.files?.[0];
+    event.currentTarget.value = '';
+    if (!file || !active) return;
+    const selectedId = active.id;
+    if (!await subtitles.upload(file) || activeIdRef.current !== selectedId) return;
+    if (playbackModeRef.current === 'drive') changePlaybackMode('direct');
+    setToast('Legenda salva no aplicativo e ativada na reprodução direta.');
+  }
+  async function removeSubtitle() {
+    if (await subtitles.remove()) setToast('Legenda removida deste vídeo no aplicativo.');
+  }
 
   return <>
     <header className="header"><div className="header-inner compact-header">
@@ -283,9 +327,18 @@ function App() {
           </div>
         </div>
         {active && libraryReady && <div className="playback-toolbar"><div className="selected-title"><Film size={15}/><strong>{active.title}</strong><button className="edit-button" aria-label={`Editar ${active.title}`} onClick={() => openEdit(active)} disabled={locked}><Pencil size={14}/></button></div><div className="playback-modes" role="group" aria-label="Modo de reprodução"><button aria-pressed={playbackMode === 'direct'} onClick={() => changePlaybackMode('direct')}>Reprodução direta</button><button aria-pressed={playbackMode === 'drive'} onClick={() => changePlaybackMode('drive')}>Player do Drive</button></div><div className="player-links">{playing && <button aria-label="Recarregar player" onClick={retryPlayback}><RefreshCw size={15}/></button>}<a href={driveViewUrl(active)} target="_blank" rel="noreferrer" aria-label="Abrir no Drive"><ExternalLink size={15}/></a></div></div>}
+        {active && libraryReady && <div className="subtitle-toolbar" aria-label="Legendas do vídeo">
+          <input ref={subtitleInputRef} type="file" accept=".srt,application/x-subrip" aria-label="Arquivo de legenda SRT" className="visually-hidden" tabIndex={-1} onChange={uploadSubtitle}/>
+          <button className="subtitle-upload" onClick={() => subtitleInputRef.current?.click()} disabled={!subtitles.ready || subtitles.busy}>{subtitles.busy ? <LoaderCircle size={15} className="spin"/> : <Upload size={15}/>} {subtitles.busy ? 'Salvando legenda…' : subtitles.subtitle ? 'Trocar legenda (.srt)' : 'Carregar legenda (.srt)'}</button>
+          {subtitles.subtitle && <><span className="subtitle-filename" title={subtitles.subtitle.filename}>{subtitles.subtitle.filename}</span><button className="subtitle-toggle" aria-pressed={subtitles.enabled && playbackMode === 'direct'} onClick={subtitles.toggle} disabled={playbackMode !== 'direct' || subtitles.busy}><Captions size={17}/>{subtitles.enabled ? 'Ocultar legendas' : 'Mostrar legendas'}</button><button className="subtitle-remove" aria-label="Remover legenda" onClick={removeSubtitle} disabled={subtitles.busy}><Trash2 size={14}/></button></>}
+          {playbackMode === 'drive' && <span className="subtitle-hint">SRT usa a reprodução direta.</span>}
+          {subtitles.problem && <p className="subtitle-problem" role="alert"><Info size={14}/>{subtitles.problem}</p>}
+        </div>}
         <div className={`player ${playing ? 'is-playing' : ''}`} ref={playerRef}>
           {!libraryReady || !active ? <div className="player-empty">{!libraryReady ? <LoaderCircle size={38} className={storageProblem ? '' : 'spin'}/> : <Film size={44} strokeWidth={1}/>}<h2>{!libraryReady ? storageProblem ? 'Sua lista está protegida' : 'Carregando sua lista' : 'Seu próximo vídeo começa aqui'}</h2><p>{!libraryReady ? 'Aguardando a biblioteca salva no aplicativo.' : 'Adicione um link do Drive e escolha um vídeo na lista acima.'}</p>{libraryReady && <button className="button secondary" onClick={openAdd}><Plus size={16}/>Adicionar primeiro vídeo</button>}</div> : <>
-            {playbackMode === 'direct' ? <video key={active.id} ref={videoRef} src={driveMediaUrl(active)} controls={playing} preload="none" playsInline onError={event => { if (playing && event.currentTarget === videoRef.current) void diagnosePlayback(active, playAttempt.current); }} onEnded={() => setPlaying(false)} aria-label={`Player: ${active.title}`}/> : playing && <iframe key={`${active.id}-${driveFrameVersion}`} src={drivePreviewUrl(active)} title={`Player do Google Drive: ${active.title}`} allow="autoplay; fullscreen; encrypted-media; picture-in-picture" allowFullScreen/>}
+            {playbackMode === 'direct' ? <video key={active.id} ref={videoRef} src={driveMediaUrl(active)} controls={playing} preload="none" playsInline onError={event => { if (playing && event.target === event.currentTarget && event.currentTarget === videoRef.current) void diagnosePlayback(active, playAttempt.current); }} onEnded={() => setPlaying(false)} aria-label={`Player: ${active.title}`}>
+              {subtitles.subtitle && <track key={subtitles.trackUrl} ref={trackRef} kind="subtitles" src={subtitles.trackUrl} label={subtitles.subtitle.filename} srcLang="und" default={subtitles.enabled}/>}
+            </video> : playing && <iframe key={`${active.id}-${driveFrameVersion}`} src={drivePreviewUrl(active)} title={`Player do Google Drive: ${active.title}`} allow="autoplay; fullscreen; encrypted-media; picture-in-picture" allowFullScreen/>}
             {!playing && <div className="player-cover drive-cover"><div className="player-top"><span className="player-label"><span/>GOOGLE DRIVE</span><DriveIcon size={18}/></div><button className="big-play" aria-label={`Reproduzir ${active.title}`} onClick={startPlayback}><Play size={27} fill="currentColor" strokeWidth={0}/></button><div className="cover-bottom"><div><div className="cover-genre">{active.genre}{active.duration && <><span>·</span>{active.duration}</>}</div><h2>{active.title}</h2></div><button className="fullscreen" aria-label="Abrir player em tela cheia" onClick={() => playerRef.current?.requestFullscreen?.().catch(() => setToast('Use a opção de tela cheia nos controles do vídeo.'))}><Maximize size={19}/></button></div></div>}
             {playerLoading && !playerError && <div className="player-loading" role="status"><LoaderCircle size={30} className="spin"/><span>Carregando arquivo original…</span></div>}
             {playerError && <div className="player-error"><Info size={24}/><strong>Não foi possível iniciar o vídeo.</strong><p>{playerError}</p><div className="player-error-actions">{playerNeedsAuth && localComputer && <button className="button primary" onClick={() => setModal('connect')}><DriveIcon size={17}/>Conectar Drive</button>}<button className="button secondary" onClick={retryPlayback}>Tentar novamente</button></div></div>}

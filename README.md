@@ -41,13 +41,19 @@ O modo direto não usa a prévia convertida do player do Drive. Se o arquivo ori
 
 O modo alternativo **Player do Drive** continua usando a incorporação do Google, com suas próprias regras de processamento, sessão e cookies. O botão **Abrir no Drive** abre o arquivo diretamente no Google. Links que contêm `resourcekey` preservam essa chave de compartilhamento em ambos os modos.
 
+### Legendas SRT
+
+Selecione o vídeo e clique em **Carregar legenda (.srt)** acima do player. Escolha um arquivo SRT do seu computador (até 2 MB). A legenda fica vinculada a esse vídeo, salva em **`.muvies/subtitles/`**, e aparece também nos outros aparelhos que acessam o aplicativo. É possível trocar, mostrar/ocultar ou remover a legenda. Mostrar ou ocultar só altera a sua reprodução; trocar ou remover atualiza o arquivo compartilhado.
+
+As legendas externas funcionam no modo **Reprodução direta**. Ao carregar uma legenda no modo **Player do Drive**, o aplicativo muda para a reprodução direta. O player incorporado do Google não aceita legendas externas enviadas pelo Muvies. O servidor converte SRT para WebVTT, formato de legendas do navegador, preservando tempos, acentos e quebras de linha; marcações de formatação são exibidas como texto. Isso não altera o codec do vídeo.
+
 ### Lista salva no aplicativo e compartilhada na rede
 
 Cada link adicionado, título e gênero são gravados em **`.muvies/library.json`**, dentro da pasta do Muvies no computador que executa o servidor. A gravação é confirmada antes de o aplicativo informar que salvou. Fechar o navegador, trocar de aparelho ou reiniciar o servidor não apaga a biblioteca. `npm ci`, builds e atualizações com Git também não removem esse arquivo, que fica fora do controle de versão.
 
 Na primeira abertura, se esse arquivo ainda não existir, o aplicativo importa automaticamente os links da versão anterior guardados no navegador que estiver acessando. Depois disso, o arquivo é a fonte da lista compartilhada; um arquivo de biblioteca intencionalmente vazio permanece vazio. A seleção do último vídeo e o Client ID público podem continuar como preferências locais do navegador.
 
-As telas abertas consultam a mesma biblioteca a cada três segundos e ao retornar para a janela. Duas pessoas salvando ao mesmo tempo não sobrescrevem silenciosamente as alterações uma da outra: a lista é atualizada e a pessoa pode conferir e tentar novamente. Remover um link só o remove da lista; o arquivo continua no Drive. Para transferir ou fazer backup da biblioteca, copie `.muvies/library.json` com o aplicativo parado. Opcionalmente, a variável `MUVIES_LIBRARY_DIR` define outro diretório de dados; o padrão continua sendo `.muvies` dentro da pasta do aplicativo.
+As telas abertas consultam a mesma biblioteca e as legendas a cada três segundos e ao retornar para a janela. Duas pessoas salvando ao mesmo tempo não sobrescrevem silenciosamente as alterações uma da outra: os dados são atualizados e a pessoa pode conferir e tentar novamente. Remover um link só o remove da lista; o arquivo continua no Drive. Para transferir ou fazer backup da biblioteca e das legendas, copie a pasta `.muvies` com o aplicativo parado. Opcionalmente, a variável `MUVIES_LIBRARY_DIR` define outro diretório de dados; o padrão continua sendo `.muvies` dentro da pasta do aplicativo.
 
 ### Acessar de outros aparelhos
 
