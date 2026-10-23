@@ -3,6 +3,7 @@ import chromium from '@sparticuz/chromium';
 
 export default defineConfig({
   testDir: './tests',
+  testMatch: '**/*.spec.ts',
   fullyParallel: true,
   workers: 2,
   timeout: 30000,

@@ -13,52 +13,70 @@ npm ci
 npm run dev -- --port 5173 --strictPort
 ```
 
-O servidor escuta em todas as interfaces na porta 5173. A aplicação é um frontend React + TypeScript + Vite; não requer banco de dados ou backend.
+O servidor escuta somente na interface local `127.0.0.1`, na porta 5173. A aplicação usa React + TypeScript + Vite, com um pequeno servidor local de transmissão integrado ao Vite. Não precisa instalar outro serviço ou banco de dados. Mantenha o terminal aberto durante a reprodução. A interface pode ser aberta usando `localhost` ou `127.0.0.1`; cadastre no Google a origem exata que você usar.
 
 ```sh
 npm run build  # TypeScript e bundle de produção em dist/
-npm test       # Testes funcionais de navegador com Playwright
+npm test       # Testes do servidor local e testes de navegador com Playwright
 ```
 
-Em Linux, os testes usam o Chromium distribuído no pacote npm `@sparticuz/chromium`, sem download adicional do navegador. Em macOS/Windows, execute `npx playwright install chromium` antes dos testes. Os testes cobrem filtros e busca, links inválidos, duplicatas, persistência, edição e remoção, layout móvel, navegação por teclado, importação paginada com API Google simulada e reprodução real da amostra local. A suíte não valida o login real na sua conta Google.
+Em Linux, os testes usam o Chromium distribuído no pacote npm `@sparticuz/chromium`, sem download adicional do navegador. Em macOS/Windows, execute `npx playwright install chromium` antes dos testes. Os testes cobrem filtros e busca, links inválidos, duplicatas, persistência, edição e remoção, layout móvel, navegação por teclado, importação com API Google simulada e reprodução real das amostras locais. Há testes de reprodução HTML5 usando bytes reais de uma amostra, alternância de players, erros de autorização, sessões isoladas e expiradas, streaming com Range/206, cancelamento de downloads e restrições de origem. O Google é simulado nos testes de integração: a suíte não valida o login nem o acesso a uma conta Google real.
 
 ## Usar seus vídeos
 
 1. Clique em **Adicionar vídeo**.
 2. Cole o link de um arquivo de vídeo do Drive (`https://drive.google.com/file/d/ID/view` ou `https://drive.google.com/open?id=ID`). Links de pastas não são aceitos.
 3. Escolha um título e um gênero. É possível criar gêneros digitando seus nomes.
-4. Selecione o vídeo e aperte play. O arquivo é aberto no player incorporado do Google Drive.
+4. Selecione o vídeo e aperte play. O modo padrão **Reprodução direta** usa o arquivo original em um player HTML5 do Muvies. O modo **Player do Drive** fica disponível como alternativa.
 
-Vídeos compartilhados mantêm suas permissões originais. Para vídeos privados, o navegador precisa estar conectado a uma conta Google com acesso ao arquivo. Bloqueio de cookies de terceiros, restrições de incorporação, limites de reprodução do Drive e arquivos ainda em processamento podem impedir a reprodução. O link **abra no Drive** permite usar o player diretamente no Google. A autorização para listar vídeos e a sessão Google do player incorporado são independentes.
+### Reprodução direta do original
+
+O servidor local transmite o arquivo original ao navegador. Para arquivos públicos, tenta o link público de download. Se o Google exigir login ou confirmação, o aplicativo pede para conectar sua conta e passa a usar a API oficial do Drive com `alt=media`. Arquivos privados exigem uma autorização OAuth com acesso de leitura ao conteúdo (`drive.readonly`). O fato de o navegador estar conectado ao site do Google não autoriza automaticamente a API do Muvies.
+
+O arquivo é transmitido em fluxo, com suporte a pedidos de trechos (`Range` e resposta `206`) para avançar ou voltar no vídeo. Não é necessário baixar o filme inteiro para a memória nem gravá-lo em disco antes de começar. Fechar ou trocar o player cancela a transmissão. O servidor respeita permissões, restrições de download, limites e erros do Google. Não confirma automaticamente páginas de aviso de download nem contorna bloqueios do proprietário.
+
+O modo direto não usa a prévia convertida do player do Drive. Se o arquivo original já estiver disponível para download e tiver codecs compatíveis com o navegador, pode reproduzir mesmo quando a prévia do Google ainda está em processamento. MP4 com vídeo H.264 e áudio AAC é uma opção amplamente compatível. Alguns arquivos MKV, AVI, HEVC ou com áudio incompatível precisam de conversão ou de um player local como o VLC; o Muvies não converte vídeos.
+
+**Rodar localmente não significa funcionar offline:** os arquivos que estão no Drive ainda precisam de internet para chegar ao seu computador. As duas amostras incluídas no projeto são locais e não dependem do Drive.
+
+O modo alternativo **Player do Drive** continua usando a incorporação do Google, com suas próprias regras de processamento, sessão e cookies. O botão **Abrir no Drive** abre o arquivo diretamente no Google. Links que contêm `resourcekey` preservam essa chave de compartilhamento em ambos os modos.
 
 A biblioteca e o Client ID público ficam no `localStorage` deste navegador. Não há sincronização automática entre aparelhos. Remover um cartão não exclui o arquivo no Drive. As duas amostras locais são identificadas como demonstrações e não pertencem ao seu Drive.
 
 ### “Este arquivo de vídeo ainda está sendo processado”
 
-Essa mensagem é exibida pelo player do Google Drive. O Muvies incorpora esse player e não controla nem acelera o processamento do Google. Também não consegue ler mensagens de erro dentro do player, porque ele pertence a outra origem.
+Essa mensagem pertence à prévia do player do Google Drive. Selecione **Reprodução direta** abaixo do player para usar o original pelo servidor local. Esse modo não depende da conversão da prévia, mas exige que o original esteja disponível para download e seja compatível com o navegador.
 
-1. Use **Abrir no Drive**, abaixo do player, para verificar o mesmo arquivo com sua conta conectada.
-2. Se a mensagem também aparecer no Drive, aguarde o processamento e tente novamente. Se você tiver permissão para baixar, pode tentar abrir o arquivo original em um player local como o VLC enquanto aguarda. Isso não altera o processamento do Google.
-3. Se o vídeo reproduzir diretamente no Drive, confirme a conta com acesso, verifique as permissões de cookies do Google e use **Recarregar player** no Muvies. A opção recarrega apenas o player, sem perder a biblioteca; ela não força o processamento do vídeo.
-4. Se o problema persistir no próprio Drive, verifique o formato e a integridade do arquivo. Ter a extensão `.mp4` não garante que os codecs internos sejam compatíveis; MP4 com H.264 e áudio AAC é uma opção amplamente compatível. O aplicativo não converte arquivos automaticamente.
+Se a reprodução direta pedir autorização, use **Conectar Drive**. Quem usava a versão anterior precisa autorizar novamente: o escopo antigo `drive.metadata.readonly` só permitia listar metadados; o novo `drive.readonly` permite ler o conteúdo dos arquivos. Não basta mudar o nome do escopo no Google Cloud sem fazer uma nova autorização.
+
+Se a conta não puder baixar o arquivo, houver limite de downloads ou o original ainda não estiver disponível, o aplicativo informa o bloqueio. Se o formato não for compatível, use o player alternativo do Drive após o processamento ou baixe o arquivo com sua conta e abra em um player compatível. O aplicativo não altera as permissões dos arquivos.
 
 ## Conectar a conta Google
 
-Adicionar links funciona sem configurar uma integração OAuth. Para importar automaticamente a lista dos seus vídeos privados ou compartilhados:
+É possível adicionar links sem OAuth e tentar reproduzir arquivos públicos disponíveis para download direto. Para ler arquivos privados, acessar links que exigem autorização e importar a biblioteca:
 
 1. Crie um projeto no Google Cloud e ative a **Google Drive API**.
 2. Configure a tela de consentimento OAuth. Se o aplicativo estiver em modo de teste, cadastre sua conta como usuário de teste.
 3. Crie uma credencial OAuth do tipo **Aplicativo da Web**. Adicione a origem exata usada para abrir o Muvies às **Origens JavaScript autorizadas**. A janela de conexão mostra essa origem. Em produção, use HTTPS. Em desenvolvimento, o Google permite uma origem localhost.
-4. Cadastre o escopo `https://www.googleapis.com/auth/drive.metadata.readonly` na configuração de acesso a dados.
-5. No Muvies, clique em **Conectar Drive**, informe o **Client ID** público e continue com o Google. Não forneça Client Secret, senha ou token.
+4. Cadastre o escopo `https://www.googleapis.com/auth/drive.readonly` na configuração de acesso a dados. Essa permissão dá acesso de leitura ao conteúdo dos arquivos, não somente aos metadados.
+5. No Muvies, clique em **Conectar Drive**, informe o **Client ID** público e continue com o Google. Autorize a nova permissão de leitura mesmo se já usava a versão anterior. Não forneça Client Secret, senha ou token.
 
-O login usa Google Identity Services e o fluxo de token para aplicativos de navegador. O token fica apenas em memória durante a importação; não é salvo. O aplicativo solicita somente acesso de leitura aos metadados, lista os arquivos de vídeo com paginação e preserva os títulos e gêneros já editados. Para atualizar a lista, use **Sincronizar Drive** e autorize a sessão novamente. Arquivos não são alterados ou excluídos. A importação não altera permissões de compartilhamento.
+O login usa Google Identity Services. O token é enviado pela aplicação ao servidor que roda na sua máquina e fica somente na memória dele, por no máximo uma hora ou até o processo encerrar. Ele não é gravado em disco, no `localStorage`, em URLs do vídeo ou em logs. O navegador recebe apenas um identificador aleatório de sessão em cookie `HttpOnly` e `SameSite=Strict`. A biblioteca e o Client ID público continuam salvos no navegador. Ao reiniciar o servidor ou expirar a autorização, conecte o Drive novamente.
+
+A permissão é de leitura: o aplicativo não altera nem exclui arquivos. A importação é paginada e mantém os títulos e gêneros já editados. **Sincronizar Drive** solicita uma nova autorização e atualiza a lista. O acesso do servidor local só aceita hosts de loopback e requisições da mesma origem; ele não funciona como um proxy público de URLs arbitrárias. Não exponha esse servidor pessoal na internet.
 
 A integração real depende do seu projeto OAuth e da autorização da sua conta. Ela não foi validada com uma conta real neste ambiente. Apps externos em produção podem exigir verificação do Google conforme o escopo e o público configurados.
 
-## Publicação
+## Rodar o build local
 
-Execute `npm run build` e publique a pasta `dist/` em um serviço de hospedagem estática com HTTPS. Não envie `node_modules/`. Adicione a origem final à credencial OAuth antes de conectar a conta. Fontes, imagens e vídeos de demonstração são locais. A conexão com o Google precisa de acesso a `accounts.google.com`, `www.googleapis.com` e `www.gstatic.com`; o player usa `drive.google.com` e pode carregar recursos de `*.googleusercontent.com` e `*.googlevideo.com`.
+```sh
+npm run build
+npm run preview -- --port 4173 --strictPort
+```
+
+O comando de preview também inclui o servidor de transmissão local. Se usar a conexão Google nessa porta, inclua essa origem na credencial OAuth. Publicar somente `dist/` em uma hospedagem estática não inclui as rotas de streaming: esta versão foi feita para rodar localmente com Node.js e Vite, como servidor pessoal.
+
+Fontes, imagens e amostras de demonstração são locais. A conexão Google usa `accounts.google.com`, `www.googleapis.com` e `www.gstatic.com`. Downloads públicos podem usar `drive.google.com`, `drive.usercontent.google.com` e redirecionamentos para `*.googleusercontent.com`. O player alternativo do Google pode usar também `*.googlevideo.com`. Na nuvem, esses destinos precisam estar liberados nas configurações de rede. Em uma instalação local, valem as regras de rede da sua máquina.
 
 ## Créditos
 

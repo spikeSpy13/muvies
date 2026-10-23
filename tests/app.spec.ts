@@ -1,4 +1,5 @@
 import { test, expect, type Page } from '@playwright/test';
+import { readFile } from 'node:fs/promises';
 
 async function addDriveVideo(page: Page, title = 'Nossa viagem') {
   await page.getByRole('button', { name: 'Adicionar vídeo', exact: true }).click();
@@ -32,6 +33,7 @@ test('links do Drive: adicionar, persistir, editar e remover sem apagar o arquiv
   await expect(page.getByRole('heading', { name: 'Nossa viagem', exact: true })).toBeVisible();
   await page.reload();
   await expect(page.locator('.video-card')).toHaveCount(3);
+  await page.getByRole('button', { name: 'Player do Drive', exact: true }).click();
   await page.getByRole('button', { name: 'Reproduzir Nossa viagem' }).click();
   await expect(page.locator('iframe')).toHaveAttribute('src', 'https://drive.google.com/file/d/1234567890abcdef/preview');
   await expect(page.locator('iframe')).toHaveAttribute('allowfullscreen', '');
@@ -82,7 +84,7 @@ test('layout móvel e acesso por teclado aos diálogos', async ({ page }) => {
 test('importação Google com paginação, preserva gêneros e não salva tokens (API simulada)', async ({ page }) => {
   await page.addInitScript(() => {
     (window as unknown as { google: unknown }).google = { accounts: { oauth2: { initTokenClient: (options: { scope: string; callback: (value: { access_token: string }) => void }) => {
-      if (options.scope !== 'https://www.googleapis.com/auth/drive.metadata.readonly') throw new Error('Unexpected scope');
+      if (options.scope !== 'https://www.googleapis.com/auth/drive.readonly') throw new Error('Unexpected scope');
       return { requestAccessToken: () => options.callback({ access_token: 'test-token-not-a-real-credential' }) };
     } } } };
   });
@@ -126,13 +128,57 @@ test('Drive em processamento: oferece diagnóstico e recarrega apenas o player',
   const help = page.getByRole('complementary', { name: 'Ajuda com a reprodução do Drive' });
   await expect(help.getByRole('link', { name: 'Abrir no Drive' })).toHaveAttribute('href', 'https://drive.google.com/file/d/1234567890abcdef/view');
   await expect(help.getByRole('button', { name: 'Recarregar player' })).toHaveCount(0);
+  await page.getByRole('button', { name: 'Player do Drive', exact: true }).click();
   await page.getByRole('button', { name: 'Reproduzir Nossa viagem' }).click();
   await expect.poll(() => requests).toBe(1);
   await help.getByText('O Drive diz que o vídeo ainda está sendo processado?').click();
-  await expect(help).toContainText('O Muvies não consegue acelerar essa etapa.');
+  await expect(help).toContainText('Esse modo não usa a prévia processada pelo Google.');
   await help.getByRole('button', { name: 'Recarregar player' }).click();
   await expect.poll(() => requests).toBe(2);
   await expect(page.locator('.video-card')).toHaveCount(3);
   await expect(page.locator('.now-playing')).toContainText('Vídeo selecionado');
   await expect(page.locator('.now-playing')).not.toContainText('Você está assistindo');
+});
+
+test('reprodução direta usa o original em um vídeo HTML5, sem iframe', async ({ page }) => {
+  const original = await readFile(new URL('../public/media/flower.mp4', import.meta.url));
+  await page.route('**/api/drive/media/1234567890abcdef', route => route.fulfill({ contentType: 'video/mp4', body: original }));
+  await page.goto('/');
+  await addDriveVideo(page);
+  await expect(page.getByRole('button', { name: 'Reprodução direta', exact: true })).toHaveAttribute('aria-pressed', 'true');
+  await page.getByRole('button', { name: 'Reproduzir Nossa viagem' }).click();
+  await expect(page.locator('video')).toHaveAttribute('src', '/api/drive/media/1234567890abcdef');
+  await expect(page.locator('iframe')).toHaveCount(0);
+  await expect.poll(() => page.locator('video').evaluate(video => (video as HTMLVideoElement).currentTime)).toBeGreaterThan(0);
+  await page.locator('video').evaluate(video => { (video as HTMLVideoElement).currentTime = 3; });
+  await expect.poll(() => page.locator('video').evaluate(video => (video as HTMLVideoElement).currentTime)).toBeGreaterThanOrEqual(3);
+  await expect(page.locator('.player-error')).toHaveCount(0);
+  await page.getByRole('button', { name: 'Player do Drive', exact: true }).click();
+  await expect(page.locator('video')).toHaveCount(0);
+  await page.getByRole('button', { name: 'Reproduzir Nossa viagem' }).click();
+  await expect(page.locator('iframe')).toHaveAttribute('src', 'https://drive.google.com/file/d/1234567890abcdef/preview');
+});
+
+test('reprodução privada pede conexão de leitura quando o original exige autorização', async ({ page }) => {
+  await page.route('**/api/drive/media/1234567890abcdef', route => route.fulfill({ status: 401, headers: { 'X-Muvies-Error': 'AUTH_REQUIRED' }, json: { code: 'AUTH_REQUIRED' } }));
+  await page.goto('/');
+  await addDriveVideo(page);
+  await page.getByRole('button', { name: 'Reproduzir Nossa viagem' }).click();
+  await expect(page.locator('.player-error')).toContainText('autorizar a leitura do arquivo original');
+  await page.locator('.player-error').getByRole('button', { name: 'Conectar Drive', exact: true }).click();
+  await expect(page.getByRole('dialog')).toContainText('drive.readonly');
+});
+
+test('link com resourcekey atualiza o vídeo existente e preserva a chave após recarregar', async ({ page }) => {
+  await page.goto('/');
+  await addDriveVideo(page);
+  await page.getByRole('button', { name: 'Adicionar vídeo', exact: true }).click();
+  await page.getByLabel('Link do vídeo').fill('https://drive.google.com/file/d/1234567890abcdef/view?resourcekey=shared-file-key');
+  await page.getByLabel('Título', { exact: true }).fill('Outro nome');
+  await page.getByRole('button', { name: 'Adicionar à biblioteca' }).click();
+  await expect(page.locator('.video-card')).toHaveCount(3);
+  await expect(page.getByRole('heading', { name: 'Nossa viagem', exact: true })).toBeVisible();
+  await page.reload();
+  await expect(page.locator('video')).toHaveAttribute('src', '/api/drive/media/1234567890abcdef?resourceKey=shared-file-key');
+  await expect(page.getByRole('link', { name: 'Abrir no Drive', exact: true })).toHaveAttribute('href', 'https://drive.google.com/file/d/1234567890abcdef/view?resourcekey=shared-file-key');
 });

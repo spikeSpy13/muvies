@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { ArrowRight, Check, ChevronDown, CircleHelp, Clapperboard, Cloud, ExternalLink, Film, FolderOpen, Info, Link, ListVideo, LoaderCircle, Maximize, Pencil, Play, Plus, RefreshCw, Search, ShieldCheck, Trash2, X } from 'lucide-react';
-import { authorizeDrive, demos, getSavedVideos, listDriveVideos, loadGoogleIdentity, parseDriveId, saveVideos, type Video } from './library';
+import { authorizeDrive, demos, driveMediaUrl, drivePreviewUrl, driveViewUrl, getSavedVideos, listDriveVideos, loadGoogleIdentity, parseDriveId, playbackErrors, saveVideos, type Video } from './library';
 import './styles.css';
 
 type Modal = 'add' | 'connect' | 'help' | 'edit' | null;
@@ -21,7 +21,10 @@ function App() {
   const [genre, setGenre] = useState('Todos');
   const [tab, setTab] = useState<'all' | 'drive'>('all');
   const [playing, setPlaying] = useState(false);
-  const [playerError, setPlayerError] = useState(false);
+  const [playerError, setPlayerError] = useState('');
+  const [playerNeedsAuth, setPlayerNeedsAuth] = useState(false);
+  const [playbackMode, setPlaybackMode] = useState<'direct' | 'drive'>('direct');
+  const [playerLoading, setPlayerLoading] = useState(false);
   const [driveFrameVersion, setDriveFrameVersion] = useState(0);
   const [dropdown, setDropdown] = useState(false);
   const [search, setSearch] = useState('');
@@ -40,12 +43,20 @@ function App() {
   const playerRef = useRef<HTMLDivElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const modalRef = useRef<HTMLDialogElement>(null);
+  const playAttempt = useRef(0);
+  const diagnosedAttempt = useRef(-1);
   const allVideos = [...saved, ...demos];
   const active = allVideos.find(video => video.id === activeId) || demos[0];
   const genres = [...new Set([...saved.map(video => video.genre), ...demos.map(video => video.genre)])];
   const filtered = allVideos.filter(video => (tab === 'all' || video.source === 'drive') && (genre === 'Todos' || video.genre === genre));
   const options = filtered.filter(video => video.title.toLocaleLowerCase('pt-BR').includes(search.toLocaleLowerCase('pt-BR')));
 
+  useEffect(() => {
+    let cancelled = false;
+    fetch('/api/drive/session').then(response => response.ok ? response.json() : null)
+      .then(data => { if (!cancelled && data?.connected) setConnected(true); }).catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
   useEffect(() => {
     if (!toast) return;
     const timer = setTimeout(() => setToast(''), 5000);
@@ -72,7 +83,15 @@ function App() {
     catch { setError('O navegador não conseguiu salvar a biblioteca. Libere o armazenamento local e tente novamente.'); return false; }
   }
   function choose(video: Video) {
-    setActiveId(video.id); setPlaying(false); setPlayerError(false); setDropdown(false); setSearch('');
+    stopPlayback(); setActiveId(video.id); setDropdown(false); setSearch('');
+  }
+  function stopPlayback() {
+    playAttempt.current++;
+    videoRef.current?.pause();
+    setPlaying(false); setPlayerError(''); setPlayerNeedsAuth(false); setPlayerLoading(false);
+  }
+  function changePlaybackMode(mode: 'direct' | 'drive') {
+    stopPlayback(); setPlaybackMode(mode);
   }
   function openAdd() { setTitle(''); setUrl(''); setNewGenre('Sem gênero'); setEditing(null); setModal('add'); }
   function openEdit(video: Video) { setEditing(video.id); setTitle(video.title); setNewGenre(video.genre); setModal('edit'); }
@@ -80,9 +99,17 @@ function App() {
     event.preventDefault();
     const driveId = parseDriveId(url);
     if (!driveId) return setError('Cole um link de vídeo do Google Drive, como drive.google.com/file/d/ID/view. Links de pastas não são aceitos.');
+    const resourceKey = new URL(url.trim()).searchParams.get('resourcekey') || undefined;
+    if (resourceKey && !/^[\w-]{1,256}$/.test(resourceKey)) return setError('A chave de compartilhamento deste link é inválida. Copie o link novamente no Drive.');
     const duplicate = saved.find(video => video.driveId === driveId);
-    if (duplicate) { choose(duplicate); setGenre('Todos'); setTab('all'); setModal(null); setToast('Este vídeo já está na sua biblioteca.'); return; }
-    const video: Video = { id: `drive-${driveId}`, driveId, title: title.trim(), genre: newGenre.trim() || 'Sem gênero', source: 'drive', url: `https://drive.google.com/file/d/${driveId}/preview` };
+    if (duplicate) {
+      const updated = resourceKey ? { ...duplicate, resourceKey } : duplicate;
+      if (resourceKey && !persist(saved.map(video => video.id === duplicate.id ? updated : video))) return;
+      choose(updated); setGenre('Todos'); setTab('all'); setModal(null);
+      setToast(resourceKey ? 'Link compartilhado atualizado. Seu título e gênero foram preservados.' : 'Este vídeo já está na sua biblioteca.');
+      return;
+    }
+    const video: Video = { id: `drive-${driveId}`, driveId, resourceKey, title: title.trim(), genre: newGenre.trim() || 'Sem gênero', source: 'drive', url: `https://drive.google.com/file/d/${driveId}/preview` };
     if (!persist([...saved, video])) return;
     choose(video); setGenre('Todos'); setTab('all'); setModal(null); setToast('Vídeo adicionado à sua biblioteca.');
   }
@@ -101,7 +128,13 @@ function App() {
     setBusy(true); setError('');
     try {
       // Request from the click handler so the browser can open the Google popup.
-      const token = await authorizeDrive(clientId.trim());
+      const { token, expiresIn } = await authorizeDrive(clientId.trim());
+      const sessionResponse = await fetch('/api/drive/session', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ accessToken: token, expiresIn }),
+      });
+      if (!sessionResponse.ok) throw new Error('Não foi possível autorizar o servidor local. Abra o Muvies com npm run dev no seu computador.');
+      setConnected(true);
       const imported = await listDriveVideos(token);
       const merged = [...saved];
       for (const video of imported) if (!merged.some(item => item.id === video.id)) merged.push(video);
@@ -113,12 +146,38 @@ function App() {
     } catch (error) { setError(error instanceof Error ? error.message : 'Não foi possível conectar. Tente novamente.'); }
     finally { setBusy(false); }
   }
-  async function startPlayback() {
-    setPlaying(true); setPlayerError(false);
-    if (active.source === 'demo') {
-      try { await videoRef.current?.play(); }
-      catch { setPlayerError(true); }
+  async function diagnosePlayback(video: Video, attempt: number) {
+    if (attempt !== playAttempt.current || diagnosedAttempt.current === attempt) return;
+    diagnosedAttempt.current = attempt;
+    let message = 'Não foi possível reproduzir este formato. Tente um MP4 com vídeo H.264 e áudio AAC, ou use o player do Drive.';
+    let needsAuth = false;
+    if (video.source === 'drive') {
+      try {
+        const response = await fetch(driveMediaUrl(video), { method: 'HEAD', signal: AbortSignal.timeout(15000) });
+        const code = response.headers.get('X-Muvies-Error') || '';
+        needsAuth = code === 'AUTH_REQUIRED';
+        if (!response.ok) message = playbackErrors[code] || 'A reprodução direta precisa do servidor local. Inicie o aplicativo com npm run dev.';
+      } catch { message = 'Não foi possível acessar o servidor local ou o Drive. Verifique a conexão e tente novamente.'; }
     }
+    if (attempt !== playAttempt.current) return;
+    if (needsAuth) setConnected(false);
+    setPlayerNeedsAuth(needsAuth); setPlayerError(message); setPlayerLoading(false);
+  }
+  async function startPlayback() {
+    const attempt = ++playAttempt.current;
+    setPlaying(true); setPlayerError(''); setPlayerNeedsAuth(false);
+    if (active.source === 'drive' && playbackMode === 'drive') return;
+    setPlayerLoading(true);
+    try { await videoRef.current?.play(); }
+    catch (error) {
+      if (error instanceof DOMException && error.name === 'NotAllowedError' && attempt === playAttempt.current) {
+        setPlayerError('O navegador bloqueou o início da reprodução. Clique em Tentar novamente para dar o play.');
+      } else await diagnosePlayback(active, attempt);
+    } finally { if (attempt === playAttempt.current) setPlayerLoading(false); }
+  }
+  function retryPlayback() {
+    if (playbackMode === 'drive' && active.source === 'drive') setDriveFrameVersion(version => version + 1);
+    else { videoRef.current?.load(); void startPlayback(); }
   }
 
   return <>
@@ -144,22 +203,24 @@ function App() {
         </div>
 
         <div className={`player ${playing ? 'is-playing' : ''}`} ref={playerRef}>
-          {active.source === 'demo' ? <video key={active.id} ref={videoRef} src={active.url} poster={active.poster} controls={playing} preload="none" playsInline onError={() => setPlayerError(true)} onEnded={() => setPlaying(false)} aria-label={`Player: ${active.title}`} /> : playing && <iframe key={`${active.id}-${driveFrameVersion}`} src={active.url} title={`Player do Google Drive: ${active.title}`} allow="autoplay; fullscreen; encrypted-media; picture-in-picture" allowFullScreen />}
+          {active.source === 'demo' || playbackMode === 'direct' ? <video key={active.id} ref={videoRef} src={active.source === 'drive' ? driveMediaUrl(active) : active.url} poster={active.poster} controls={playing} preload="none" playsInline onError={event => { if (playing && event.currentTarget === videoRef.current) void diagnosePlayback(active, playAttempt.current); }} onEnded={() => setPlaying(false)} aria-label={`Player: ${active.title}`} /> : playing && <iframe key={`${active.id}-${driveFrameVersion}`} src={drivePreviewUrl(active)} title={`Player do Google Drive: ${active.title}`} allow="autoplay; fullscreen; encrypted-media; picture-in-picture" allowFullScreen />}
           {!playing && <div className={`player-cover ${active.source === 'drive' ? 'drive-cover' : ''}`}>
             <div className="player-top"><span className="player-label"><span/> {active.source === 'drive' ? 'DO SEU GOOGLE DRIVE' : 'SESSÃO DE DEMONSTRAÇÃO'}</span><span className="quality-label">{active.source === 'drive' ? <DriveIcon size={17}/> : active.id === 'demo-bunny' ? 'BLENDER OPEN MOVIE' : 'UM RESPIRO NA ROTINA'}</span></div>
             <button className="big-play" aria-label={`Reproduzir ${active.title}`} onClick={startPlayback}><Play size={27} fill="currentColor" strokeWidth={0}/></button>
             <div className="cover-bottom"><div><div className="cover-genre">{active.genre} {active.duration && <><span>·</span>{active.duration}</>}</div><h2>{active.title}</h2><p>{active.source === 'drive' ? 'Seu próximo play está aqui.' : 'Uma boa história começa com um play.'}</p></div><button className="fullscreen" aria-label="Abrir player em tela cheia" onClick={() => { playerRef.current?.requestFullscreen?.().catch(() => setToast('Use a opção de tela cheia nos controles do vídeo.')); }}><Maximize size={19}/></button></div>
           </div>}
-          {playerError && <div className="player-error"><Info size={24}/><strong>Não foi possível carregar o vídeo.</strong><p>Verifique sua conexão e tente novamente.</p><button className="button secondary" onClick={() => { videoRef.current?.load(); startPlayback(); }}>Tentar novamente</button></div>}
+          {playerLoading && !playerError && <div className="player-loading" role="status"><LoaderCircle size={30} className="spin"/><span>Carregando arquivo original…</span></div>}
+          {playerError && <div className="player-error"><Info size={24}/><strong>Não foi possível iniciar o vídeo.</strong><p>{playerError}</p><div className="player-error-actions">{playerNeedsAuth && <button className="button primary" onClick={() => setModal('connect')}><DriveIcon size={17}/>Conectar Drive</button>}<button className="button secondary" onClick={retryPlayback}>Tentar novamente</button></div></div>}
         </div>
         <div className="now-playing"><div><span className="playing-indicator"><i/><i/><i/></span><span>{active.source === 'drive' || !playing ? 'Vídeo selecionado' : 'Você está assistindo'}</span><strong>{active.title}</strong></div><span className="source-badge">{active.source === 'drive' ? <><DriveIcon size={14}/> Google Drive</> : <><Film size={14}/> Vídeo de demonstração</>}</span></div>
         {active.source === 'drive' && <aside className="drive-playback-help" aria-label="Ajuda com a reprodução do Drive">
-          <div className="drive-help-heading"><Info size={17}/><div><strong>O vídeo não começou?</strong><p>Para vídeos privados, use a conta Google com acesso ao arquivo.</p></div></div>
+          <div className="drive-help-heading"><Info size={17}/><div><strong>{playbackMode === 'direct' ? 'Arquivo original no player local' : 'Player incorporado do Google Drive'}</strong><p>{playbackMode === 'direct' ? 'O player local lê o original, sem depender do processamento de prévia do Drive. Vídeos privados exigem conexão com o Google.' : 'Esta opção usa a versão processada pelo Google e pode exigir login no Drive.'}</p></div></div>
+          <div className="playback-modes" role="group" aria-label="Modo de reprodução"><button aria-pressed={playbackMode === 'direct'} onClick={() => changePlaybackMode('direct')}>Reprodução direta</button><button aria-pressed={playbackMode === 'drive'} onClick={() => changePlaybackMode('drive')}>Player do Drive</button></div>
           <div className="drive-help-actions">
-            {playing && <button className="button secondary" onClick={() => setDriveFrameVersion(version => version + 1)}><RefreshCw size={14}/>Recarregar player</button>}
-            <a className="button secondary" href={`https://drive.google.com/file/d/${active.driveId}/view`} target="_blank" rel="noreferrer">Abrir no Drive<ExternalLink size={14}/></a>
+            {playing && <button className="button secondary" onClick={retryPlayback}><RefreshCw size={14}/>Recarregar player</button>}
+            <a className="button secondary" href={driveViewUrl(active)} target="_blank" rel="noreferrer">Abrir no Drive<ExternalLink size={14}/></a>
           </div>
-          <details className="drive-processing-help"><summary>O Drive diz que o vídeo ainda está sendo processado?</summary><p>Abra o arquivo no Drive para conferir. Se a mesma mensagem aparecer lá, aguarde o processamento do Google e tente novamente. O Muvies não consegue acelerar essa etapa.</p><p>Se o vídeo já reproduz no Drive, confira se o navegador permite cookies do Google, entre na mesma conta e use <strong>Recarregar player</strong>. Se necessário, assista diretamente no Drive.</p><p>Se precisar assistir antes do processamento terminar, tente baixar o arquivo pelo próprio Drive e abri-lo em um player local, como o VLC, desde que você tenha permissão para download.</p></details>
+          <details className="drive-processing-help"><summary>O Drive diz que o vídeo ainda está sendo processado?</summary><p>Escolha <strong>Reprodução direta</strong> para ler o arquivo original no player local. Esse modo não usa a prévia processada pelo Google. Para vídeos privados ou links que pedem confirmação de download, conecte sua conta com permissão de leitura do conteúdo.</p><p>O arquivo precisa estar disponível para download e usar codecs compatíveis com o navegador. MP4 com vídeo H.264 e áudio AAC é uma opção comum. Arquivos como MKV podem exigir conversão ou um player como VLC; o Muvies não converte vídeos.</p><p>O modo <strong>Player do Drive</strong> continua dependendo do processamento do Google. Rodar o aplicativo localmente não elimina a necessidade de internet para receber arquivos do Drive.</p></details>
         </aside>}
       </section>
 
@@ -184,18 +245,18 @@ function App() {
         <label>Título<input required maxLength={120} placeholder="Como se chama essa história?" value={title} onChange={event => setTitle(event.target.value)}/></label>
         <label>Gênero<input list="genre-options" placeholder="Escolha ou crie um gênero" maxLength={32} value={newGenre} onChange={event => setNewGenre(event.target.value)}/><datalist id="genre-options">{[...new Set([...baseGenres, ...genres])].map(item => <option value={item} key={item}/>)}</datalist></label>
         {error && <p className="form-error" role="alert">{error}</p>}
-        {modal === 'add' && <div className="form-note"><ShieldCheck size={17}/><span>Vídeos privados continuam privados. O player usa as permissões da sua conta Google.</span></div>}
+        {modal === 'add' && <div className="form-note"><ShieldCheck size={17}/><span>Vídeos privados continuam privados. Para reproduzir o arquivo original, conecte o Drive com uma conta que tenha permissão de leitura e download.</span></div>}
         <div className="modal-actions">{modal === 'edit' && <button type="button" className="delete-button" onClick={removeVideo}><Trash2 size={16}/>Remover</button>}<button className="button primary" type="submit">{modal === 'edit' ? <Check size={17}/> : <Plus size={17}/>} {modal === 'edit' ? 'Salvar alterações' : 'Adicionar à biblioteca'}</button></div>
       </form></>}
 
-      {modal === 'connect' && <><div className="modal-icon google"><DriveIcon size={28}/></div><h2 id="dialog-title">Seu Drive, na primeira fila.</h2><p className="modal-description">Conecte sua conta para encontrar e importar seus vídeos, incluindo os privados. Você escolhe o que assistir.</p>
-        <div className="connection-benefits"><span><Check size={16}/> Importa os vídeos da sua conta</span><span><Check size={16}/> Preserva os títulos e gêneros que você editou</span><span><ShieldCheck size={16}/> Não altera ou exclui arquivos do Drive</span></div>
-        <details className="setup-details" open={!clientId}><summary>Configuração da conexão Google<ChevronDown size={15}/></summary><p>Para ativar o login neste aplicativo, use um Client ID OAuth do tipo “Aplicativo da Web”, com a API Google Drive ativada e esta origem autorizada:</p><code>{window.location.origin}</code><label>Client ID do Google<input value={clientId} onChange={event => setClientId(event.target.value)} placeholder="Seu identificador.apps.googleusercontent.com" autoComplete="off"/></label><p>Configure o consentimento com a permissão <code>drive.metadata.readonly</code>. Em modo de teste, inclua sua conta como usuário de teste. Esse identificador é público; não informe um Client Secret.</p></details>
+      {modal === 'connect' && <><div className="modal-icon google"><DriveIcon size={28}/></div><h2 id="dialog-title">Seu Drive, na primeira fila.</h2><p className="modal-description">Autorize a leitura dos arquivos para reproduzir os vídeos originais no player local e importar sua biblioteca. Se você já conectou antes, autorize novamente com a nova permissão.</p>
+        <div className="connection-benefits"><span><Check size={16}/> Lê os vídeos originais, sem usar a prévia do Drive</span><span><Check size={16}/> Preserva os títulos e gêneros que você editou</span><span><ShieldCheck size={16}/> Permissão de leitura dos arquivos, sem alterar ou excluir</span></div>
+        <details className="setup-details" open={!clientId}><summary>Configuração da conexão Google<ChevronDown size={15}/></summary><p>Para ativar o login neste aplicativo, use um Client ID OAuth do tipo “Aplicativo da Web”, com a API Google Drive ativada e esta origem autorizada:</p><code>{window.location.origin}</code><label>Client ID do Google<input value={clientId} onChange={event => setClientId(event.target.value)} placeholder="Seu identificador.apps.googleusercontent.com" autoComplete="off"/></label><p>Configure o consentimento com a permissão <code>drive.readonly</code>, que autoriza ler o conteúdo dos arquivos. A antiga permissão de metadados não basta. Em modo de teste, inclua sua conta como usuário de teste. Esse identificador é público; não informe um Client Secret.</p></details>
         {error && <p className="form-error" role="alert">{error}</p>}
-        <button className="button primary connect-submit" onClick={connect} disabled={busy || !identityReady}>{busy ? <LoaderCircle size={18} className="spin"/> : <DriveIcon size={18}/>} {busy ? 'Importando seus vídeos…' : 'Continuar com o Google'}</button><button className="text-button" disabled={busy} onClick={openAdd}>Prefiro adicionar um link<ArrowRight size={14}/></button><p className="connection-footnote">A autorização é usada somente nesta sessão. Seus tokens não são salvos. O player do Drive exige uma sessão Google com acesso aos vídeos privados.</p>
+        <button className="button primary connect-submit" onClick={connect} disabled={busy || !identityReady}>{busy ? <LoaderCircle size={18} className="spin"/> : <DriveIcon size={18}/>} {busy ? 'Conectando e importando…' : 'Continuar com o Google'}</button><button className="text-button" disabled={busy} onClick={openAdd}>Prefiro adicionar um link<ArrowRight size={14}/></button><p className="connection-footnote">A autorização fica apenas na memória do servidor local, até expirar ou ele ser encerrado. O navegador guarda um identificador de sessão protegido, sem o token. Nenhum arquivo do Drive é alterado.</p>
       </>}
 
-      {modal === 'help' && <><div className="modal-icon"><Clapperboard size={25}/></div><h2 id="dialog-title">Sua sala de cinema particular.</h2><p className="modal-description">Sem complicação. Só você e as suas histórias.</p><ol className="help-steps"><li><span>01</span><div><strong>Traga seus vídeos</strong><p>Adicione um link de vídeo do Drive ou conecte sua conta para importar a lista.</p></div></li><li><span>02</span><div><strong>Organize do seu jeito</strong><p>Escolha um gênero ao adicionar. Use o lápis ao lado do vídeo para editar ou remover da biblioteca.</p></div></li><li><span>03</span><div><strong>Dê o play</strong><p>Escolha um vídeo na lista ou nos cartões e clique no player. Para vídeos privados, use a conta Google com acesso ao arquivo.</p></div></li></ol><div className="form-note"><Info size={19}/><span>A biblioteca fica salva neste navegador. Seus arquivos não são copiados. As amostras são <a href="https://www.bigbuckbunny.org/" target="_blank" rel="noreferrer">Big Buck Bunny</a> (Blender Foundation, <a href="https://creativecommons.org/licenses/by/3.0/" target="_blank" rel="noreferrer">CC BY 3.0</a>) e Flower (MDN, CC0). A reprodução no Drive depende das permissões do arquivo e dos cookies do Google.</span></div><button className="button primary connect-submit" onClick={() => setModal(null)}>Vamos assistir<Play size={16}/></button></>}
+      {modal === 'help' && <><div className="modal-icon"><Clapperboard size={25}/></div><h2 id="dialog-title">Sua sala de cinema particular.</h2><p className="modal-description">Sem complicação. Só você e as suas histórias.</p><ol className="help-steps"><li><span>01</span><div><strong>Traga seus vídeos</strong><p>Adicione um link de vídeo do Drive ou conecte sua conta para importar a lista.</p></div></li><li><span>02</span><div><strong>Organize do seu jeito</strong><p>Escolha um gênero ao adicionar. Use o lápis ao lado do vídeo para editar ou remover da biblioteca.</p></div></li><li><span>03</span><div><strong>Dê o play</strong><p>Escolha um vídeo e aperte play. A reprodução direta lê o original pelo servidor local. Para vídeos privados, conecte o Drive com permissão de leitura do conteúdo.</p></div></li></ol><div className="form-note"><Info size={19}/><span>A biblioteca fica salva neste navegador. Seus arquivos não são copiados. As amostras são <a href="https://www.bigbuckbunny.org/" target="_blank" rel="noreferrer">Big Buck Bunny</a> (Blender Foundation, <a href="https://creativecommons.org/licenses/by/3.0/" target="_blank" rel="noreferrer">CC BY 3.0</a>) e Flower (MDN, CC0). A reprodução direta precisa de internet, permissão de download e codecs compatíveis com o navegador. O player alternativo do Drive depende do processamento e dos cookies do Google.</span></div><button className="button primary connect-submit" onClick={() => setModal(null)}>Vamos assistir<Play size={16}/></button></>}
     </div></dialog>
     {toast && <div className="toast" role="status"><Check size={18}/>{toast}<button aria-label="Dispensar aviso" onClick={() => setToast('')}><X size={16}/></button></div>}
   </>;
