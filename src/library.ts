@@ -66,7 +66,9 @@ export function drivePreviewUrl(video: Video): string {
 }
 
 export const playbackErrors: Record<string, string> = {
-  AUTH_REQUIRED: 'Conecte o Google Drive para autorizar a leitura do arquivo original. A permissão anterior, apenas de metadados, não permite reproduzir o arquivo.',
+  AUTH_REQUIRED: 'O Google está exigindo login para baixar este arquivo. Confira se o link permite acesso e download sem login, ou conecte uma conta com acesso.',
+  PUBLIC_DOWNLOAD_UNAVAILABLE: 'O Google não liberou o download público deste link. Abra o arquivo no Drive e confira se ele pode ser baixado sem login. Não é necessário configurar Client ID para um download público disponível.',
+  DRIVE_BLOCKED: 'O Google bloqueou o download deste arquivo. Abra o arquivo no Drive para consultar o motivo.',
   DRIVE_FORBIDDEN: 'Sua conta não pode baixar este arquivo ou o Drive limitou os downloads. Confira as permissões do arquivo no Drive.',
   DRIVE_NOT_FOUND: 'Arquivo não encontrado ou sem acesso nesta conta Google.',
   DRIVE_LIMIT: 'O Drive limitou os downloads. Aguarde e tente novamente.',

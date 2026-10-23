@@ -164,7 +164,7 @@ test('reprodução privada pede conexão de leitura quando o original exige auto
   await page.goto('/');
   await addDriveVideo(page);
   await page.getByRole('button', { name: 'Reproduzir Nossa viagem' }).click();
-  await expect(page.locator('.player-error')).toContainText('autorizar a leitura do arquivo original');
+  await expect(page.locator('.player-error')).toContainText('O Google está exigindo login');
   await page.locator('.player-error').getByRole('button', { name: 'Conectar Drive', exact: true }).click();
   await expect(page.getByRole('dialog')).toContainText('drive.readonly');
 });
@@ -181,4 +181,14 @@ test('link com resourcekey atualiza o vídeo existente e preserva a chave após 
   await page.reload();
   await expect(page.locator('video')).toHaveAttribute('src', '/api/drive/media/1234567890abcdef?resourceKey=shared-file-key');
   await expect(page.getByRole('link', { name: 'Abrir no Drive', exact: true })).toHaveAttribute('href', 'https://drive.google.com/file/d/1234567890abcdef/view?resourcekey=shared-file-key');
+});
+
+test('falha no download público não pede Client ID sem evidência de login', async ({ page }) => {
+  await page.route('**/api/drive/media/1234567890abcdef', route => route.fulfill({ status: 502,
+    headers: { 'X-Muvies-Error': 'PUBLIC_DOWNLOAD_UNAVAILABLE' }, json: { code: 'PUBLIC_DOWNLOAD_UNAVAILABLE' } }));
+  await page.goto('/');
+  await addDriveVideo(page);
+  await page.getByRole('button', { name: 'Reproduzir Nossa viagem' }).click();
+  await expect(page.locator('.player-error')).toContainText('Não é necessário configurar Client ID');
+  await expect(page.locator('.player-error').getByRole('button', { name: 'Conectar Drive', exact: true })).toHaveCount(0);
 });

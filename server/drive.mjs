@@ -1,6 +1,7 @@
 import { randomBytes } from 'node:crypto';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
+import { fetchPublicDriveOriginal, PublicDriveError, videoContentType } from './public-drive.mjs';
 
 const SESSION_COOKIE = 'muvies_drive_session';
 const FILE_ID = /^[\w-]{10,200}$/;
@@ -111,7 +112,7 @@ export function createDriveMiddleware({ fetchImpl = globalThis.fetch, now = Date
       let upstream;
       try {
         let destination = source;
-        for (let redirects = 0; redirects <= 5; redirects++) {
+        for (let redirects = 0; session && redirects <= 5; redirects++) {
           const headers = new Headers({ 'Accept-Encoding': 'identity' });
           if (range) headers.set('Range', range);
           if (session && destination.hostname === 'www.googleapis.com') {
@@ -125,6 +126,28 @@ export function createDriveMiddleware({ fetchImpl = globalThis.fetch, now = Date
           if (!location || redirects === 5) throw new Error('Invalid redirect');
           destination = new URL(location, destination);
           if (!trustedDownloadUrl(destination)) throw new Error('Untrusted redirect');
+        }
+        const rejectedStatus = session ? upstream?.status : null;
+        if (!session || [401, 403, 404].includes(rejectedStatus)) {
+          if (session) {
+            await upstream.body?.cancel();
+            if (rejectedStatus === 401) {
+              sessions.delete(id);
+              res.setHeader('Set-Cookie', clearCookie);
+            }
+          }
+          const publicSource = new URL(`https://drive.google.com/uc?export=download&id=${fileId}`);
+          if (resourceKey) publicSource.searchParams.set('resourcekey', resourceKey);
+          try {
+            upstream = await fetchPublicDriveOriginal({ source: publicSource, fileId, resourceKey, range,
+              signal: controller.signal, fetchImpl, userAgent: req.headers['user-agent'] });
+          } catch (error) {
+            if (error instanceof PublicDriveError && ['AUTH_REQUIRED', 'PUBLIC_DOWNLOAD_UNAVAILABLE'].includes(error.code)) {
+              if (rejectedStatus === 403) throw new PublicDriveError(403, 'DRIVE_FORBIDDEN', 'Esta conta não tem permissão de leitura do arquivo original. Confira o acesso e a autorização do Drive.');
+              if (rejectedStatus === 404) throw new PublicDriveError(404, 'DRIVE_NOT_FOUND', 'Arquivo não encontrado ou sem acesso nesta conta Google.');
+            }
+            throw error;
+          }
         }
         clearTimeout(timeout);
         if (!upstream) throw new Error('No upstream response');
@@ -144,7 +167,7 @@ export function createDriveMiddleware({ fetchImpl = globalThis.fetch, now = Date
           return sendError(res, 502, 'DRIVE_UNAVAILABLE', 'Não foi possível receber o arquivo original do Google Drive.');
         }
         const contentType = (upstream.headers.get('content-type') || '').toLowerCase();
-        if (!contentType.startsWith('video/') && !contentType.startsWith('application/octet-stream')) {
+        if (!videoContentType(contentType)) {
           await upstream.body?.cancel();
           return sendError(res, session ? 415 : 401, session ? 'NOT_VIDEO' : 'AUTH_REQUIRED', session
             ? 'O Drive não retornou um arquivo de vídeo reproduzível.'
@@ -160,8 +183,9 @@ export function createDriveMiddleware({ fetchImpl = globalThis.fetch, now = Date
         if (req.method === 'HEAD') { await upstream.body.cancel(); return res.end(); }
         // Backpressure and cancellation keep movie-sized responses out of memory.
         await pipeline(Readable.fromWeb(upstream.body), res);
-      } catch {
-        if (!res.headersSent && !res.destroyed) sendError(res, 502, 'DRIVE_UNAVAILABLE', 'Não foi possível transmitir o original. Verifique sua conexão e tente novamente.');
+      } catch (error) {
+        if (!res.headersSent && !res.destroyed && error instanceof PublicDriveError) sendError(res, error.status, error.code, error.message, error.headers);
+        else if (!res.headersSent && !res.destroyed) sendError(res, 502, 'DRIVE_UNAVAILABLE', 'Não foi possível transmitir o original. Verifique sua conexão e tente novamente.');
         else if (!res.destroyed) res.destroy();
       } finally {
         clearTimeout(timeout);

@@ -7,6 +7,13 @@ import { createDriveMiddleware } from '../server/drive.mjs';
 const fileId = '1234567890abcdef';
 const fakeToken = 'test-token-not-a-real-credential';
 
+function downloadForm({ id = fileId, action = 'https://drive.usercontent.google.com/download', extra = '' } = {}) {
+  return `<html><title>Google Drive - Virus scan warning</title><p>Google Drive can't scan this file for viruses because it is too large.</p>
+    <form id="download-form" action="${action}" method="get"><input type="hidden" name="id" value="${id}">
+    <input type="hidden" name="export" value="download"><input type="hidden" name="confirm" value="t">
+    <input type="hidden" name="uuid" value="public-download-uuid">${extra}</form></html>`;
+}
+
 function rawStatus(url, headers) {
   return new Promise((resolve, reject) => {
     get(url, { headers }, response => { response.resume(); resolve(response.statusCode); }).on('error', reject);
@@ -78,8 +85,8 @@ test('original privado: sessão isolada, token na API, chave de recurso e encerr
   assert.match(logout.headers.get('set-cookie'), /Max-Age=0/);
 });
 
-test('página HTML de login ou confirmação não é entregue como se fosse vídeo', async t => {
-  const { media } = await setup(t, async () => new Response('<html>Faça login</html>', { headers: { 'Content-Type': 'text/html' } }));
+test('página HTML de login não é entregue como se fosse vídeo', async t => {
+  const { media } = await setup(t, async () => new Response('<form action="https://accounts.google.com/ServiceLogin"><input type="password"></form>', { headers: { 'Content-Type': 'text/html' } }));
   const response = await fetch(media);
   assert.equal(response.status, 401);
   assert.equal((await response.json()).code, 'AUTH_REQUIRED');
@@ -167,4 +174,138 @@ test('sessões expiram; origem externa, host remoto e ranges múltiplos são rec
   assert.equal(await rawStatus(media, { 'Sec-Fetch-Site': 'cross-site' }), 403);
   assert.equal((await fetch(media, { headers: { Range: 'bytes=0-1,4-5' } })).status, 416);
   assert.equal(calls, 0);
+});
+
+test('arquivo público grande: segue confirmação, cookies anônimos, resourcekey e Range sem login', async t => {
+  let calls = 0;
+  const { media } = await setup(t, async (url, options) => {
+    calls++;
+    assert.equal(options.headers.get('authorization'), null);
+    assert.equal(options.headers.get('range'), 'bytes=4-7');
+    if (calls === 1) {
+      assert.equal(url.hostname, 'drive.google.com');
+      assert.equal(options.headers.get('cookie'), null);
+      return new Response(null, { status: 303, headers: {
+        Location: `https://drive.usercontent.google.com/download?id=${fileId}&export=download`,
+        'Set-Cookie': 'public_download=anonymous; Domain=google.com; Path=/; Secure',
+      } });
+    }
+    assert.equal(url.hostname, 'drive.usercontent.google.com');
+    assert.equal(options.headers.get('cookie'), 'public_download=anonymous');
+    if (calls === 2) return new Response(downloadForm(), { headers: { 'Content-Type': 'text/html; charset=utf-8' } });
+    assert.equal(url.searchParams.get('id'), fileId);
+    assert.equal(url.searchParams.get('confirm'), 't');
+    assert.equal(url.searchParams.get('uuid'), 'public-download-uuid');
+    assert.equal(url.searchParams.get('resourcekey'), 'shared-file-key');
+    return new Response('4567', { status: 206, headers: { 'Content-Type': 'video/mp4', 'Content-Range': 'bytes 4-7/10', 'Content-Length': '4' } });
+  });
+  const response = await fetch(`${media}?resourceKey=shared-file-key`, { headers: { Range: 'bytes=4-7', Cookie: 'unrelated_app_session=never-forward' } });
+  assert.equal(response.status, 206);
+  assert.equal(response.headers.get('content-range'), 'bytes 4-7/10');
+  assert.equal(await response.text(), '4567');
+  assert.equal(calls, 3);
+});
+
+test('cookies de download não atravessam domínios Google diferentes', async t => {
+  let calls = 0;
+  const { media } = await setup(t, async (url, options) => {
+    calls++;
+    if (calls === 1) return new Response(null, { status: 302, headers: {
+      Location: 'https://download.googleusercontent.com/original',
+      'Set-Cookie': 'public_download=anonymous; Path=/; Secure',
+    } });
+    assert.equal(url.hostname, 'download.googleusercontent.com');
+    assert.equal(options.headers.get('cookie'), null);
+    return new Response('original', { headers: { 'Content-Type': 'application/octet-stream' } });
+  });
+  assert.equal(await (await fetch(media)).text(), 'original');
+});
+
+test('formulário externo ou de outro arquivo não é seguido', async t => {
+  for (const options of [{ action: 'https://attacker.example/download' }, { id: 'another-file-id' }, { extra: '<input type="hidden" name="acknowledgeAbuse" value="true">' }]) {
+    let calls = 0;
+    const { media } = await setup(t, async () => { calls++; return new Response(downloadForm(options), { headers: { 'Content-Type': 'text/html' } }); });
+    const response = await fetch(media);
+    assert.equal(response.status, options.extra ? 403 : 502);
+    assert.equal(calls, 1);
+  }
+});
+
+test('HTML desconhecido, cota e bloqueio não são classificados como falta de OAuth', async t => {
+  for (const [html, status, code] of [
+    ['<html>Unexpected response</html>', 502, 'PUBLIC_DOWNLOAD_UNAVAILABLE'],
+    ['<html>Too many users have viewed or downloaded this file recently.</html>', 429, 'DRIVE_LIMIT'],
+    ['<html>This file is infected with a virus.</html>', 403, 'DRIVE_BLOCKED'],
+  ]) {
+    const { media } = await setup(t, async () => new Response(html, { headers: { 'Content-Type': 'text/html' } }));
+    const response = await fetch(media);
+    assert.equal(response.status, status);
+    assert.equal((await response.json()).code, code);
+  }
+});
+
+test('confirmações repetidas e páginas HTML grandes têm limite', async t => {
+  for (const html of [downloadForm(), `<html>${'x'.repeat(270000)}</html>`]) {
+    let calls = 0;
+    const { media } = await setup(t, async () => { calls++; return new Response(html, { headers: { 'Content-Type': 'text/html' } }); });
+    const response = await fetch(media);
+    assert.equal(response.status, 502);
+    assert.equal((await response.json()).code, 'PUBLIC_DOWNLOAD_UNAVAILABLE');
+    assert.ok(calls <= 2);
+  }
+});
+
+test('HEAD resolve a confirmação pública e cancela o corpo do vídeo', async t => {
+  let cancelled = false;
+  let calls = 0;
+  const { media } = await setup(t, async () => {
+    calls++;
+    if (calls === 1) return new Response(downloadForm(), { headers: { 'Content-Type': 'text/html' } });
+    return new Response(new ReadableStream({ start(controller) { controller.enqueue(new Uint8Array([1, 2])); }, cancel() { cancelled = true; } }), { headers: { 'Content-Type': 'video/mp4' } });
+  });
+  const response = await fetch(media, { method: 'HEAD' });
+  assert.equal(response.status, 200);
+  assert.equal(cancelled, true);
+  assert.equal(calls, 2);
+});
+
+test('autorização expirada tenta o download público sem pedir nova conexão', async t => {
+  let calls = 0;
+  const { base, media } = await setup(t, async (url, options) => {
+    calls++;
+    if (calls === 1) { assert.equal(url.hostname, 'www.googleapis.com'); return new Response('expired', { status: 401 }); }
+    assert.equal(options.headers.get('authorization'), null);
+    return new Response('original public file', { headers: { 'Content-Type': 'video/mp4' } });
+  });
+  const cookie = await authorize(base);
+  const response = await fetch(media, { headers: { Cookie: cookie } });
+  assert.equal(await response.text(), 'original public file');
+  assert.equal(calls, 2);
+  assert.match(response.headers.get('set-cookie'), /Max-Age=0/);
+});
+
+test('nomes de arquivo não são confundidos com cota ou bloqueio do Google', async t => {
+  for (const filename of ['Download Quota.mp4', 'infected with a virus.mp4']) {
+    let calls = 0;
+    const { media } = await setup(t, async () => {
+      calls++;
+      if (calls === 1) return new Response(`<div class="uc-name-size">${filename}</div>${downloadForm()}`, { headers: { 'Content-Type': 'text/html' } });
+      return new Response('original', { headers: { 'Content-Type': 'video/mp4' } });
+    });
+    assert.equal(await (await fetch(media)).text(), 'original');
+    assert.equal(calls, 2);
+  }
+});
+
+test('conta sem acesso de conteúdo não impede baixar o mesmo arquivo público', async t => {
+  let calls = 0;
+  const { base, media } = await setup(t, async (url, options) => {
+    calls++;
+    if (calls === 1) { assert.equal(url.hostname, 'www.googleapis.com'); return new Response('insufficient scope', { status: 403 }); }
+    assert.equal(options.headers.get('authorization'), null);
+    return new Response('original public file', { headers: { 'Content-Type': 'video/mp4' } });
+  });
+  const cookie = await authorize(base);
+  assert.equal(await (await fetch(media, { headers: { Cookie: cookie } })).text(), 'original public file');
+  assert.equal(calls, 2);
 });

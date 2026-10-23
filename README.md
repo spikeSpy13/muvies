@@ -31,9 +31,9 @@ Em Linux, os testes usam o Chromium distribuído no pacote npm `@sparticuz/chrom
 
 ### Reprodução direta do original
 
-O servidor local transmite o arquivo original ao navegador. Para arquivos públicos, tenta o link público de download. Se o Google exigir login ou confirmação, o aplicativo pede para conectar sua conta e passa a usar a API oficial do Drive com `alt=media`. Arquivos privados exigem uma autorização OAuth com acesso de leitura ao conteúdo (`drive.readonly`). O fato de o navegador estar conectado ao site do Google não autoriza automaticamente a API do Muvies.
+O servidor local transmite o arquivo original ao navegador. Para arquivos públicos, tenta o link público de download. O aplicativo também resolve a confirmação normal de download público de arquivos grandes, mantendo os cookies anônimos apenas durante essa tentativa. Não é necessário Client ID para esse fluxo público. Se o Google realmente exigir login, o aplicativo oferece conectar sua conta e usar a API oficial do Drive com `alt=media`. Arquivos privados exigem uma autorização OAuth com acesso de leitura ao conteúdo (`drive.readonly`). O fato de o navegador estar conectado ao site do Google não autoriza automaticamente a API do Muvies.
 
-O arquivo é transmitido em fluxo, com suporte a pedidos de trechos (`Range` e resposta `206`) para avançar ou voltar no vídeo. Não é necessário baixar o filme inteiro para a memória nem gravá-lo em disco antes de começar. Fechar ou trocar o player cancela a transmissão. O servidor respeita permissões, restrições de download, limites e erros do Google. Não confirma automaticamente páginas de aviso de download nem contorna bloqueios do proprietário.
+O arquivo é transmitido em fluxo, com suporte a pedidos de trechos (`Range` e resposta `206`) para avançar ou voltar no vídeo. Não é necessário baixar o filme inteiro para a memória nem gravá-lo em disco antes de começar. Fechar ou trocar o player cancela a transmissão. O servidor respeita permissões, restrições de download, limites e erros do Google. Segue apenas confirmações normais de download público do mesmo arquivo em endereços reconhecidos do Google; não contorna login, cotas, bloqueios do proprietário ou avisos de arquivo infectado/abusivo. HTML desconhecido não é interpretado como prova de falta de autorização.
 
 O modo direto não usa a prévia convertida do player do Drive. Se o arquivo original já estiver disponível para download e tiver codecs compatíveis com o navegador, pode reproduzir mesmo quando a prévia do Google ainda está em processamento. MP4 com vídeo H.264 e áudio AAC é uma opção amplamente compatível. Alguns arquivos MKV, AVI, HEVC ou com áudio incompatível precisam de conversão ou de um player local como o VLC; o Muvies não converte vídeos.
 
@@ -53,7 +53,7 @@ Se a conta não puder baixar o arquivo, houver limite de downloads ou o original
 
 ## Conectar a conta Google
 
-É possível adicionar links sem OAuth e tentar reproduzir arquivos públicos disponíveis para download direto. Para ler arquivos privados, acessar links que exigem autorização e importar a biblioteca:
+É possível adicionar links sem OAuth e tentar reproduzir arquivos públicos disponíveis para download direto. A confirmação normal de download público de arquivos grandes é tratada sem Client ID. Para ler arquivos privados, acessar links que realmente exigem autorização e importar a biblioteca:
 
 1. Crie um projeto no Google Cloud e ative a **Google Drive API**.
 2. Configure a tela de consentimento OAuth. Se o aplicativo estiver em modo de teste, cadastre sua conta como usuário de teste.
@@ -86,3 +86,7 @@ Fontes, imagens e amostras de demonstração são locais. A conexão Google usa 
 - Ícones: Lucide, licença ISC.
 
 Não há vínculo oficial entre Muvies, Google ou Blender Foundation.
+
+## Rede com proxy
+
+Em ambientes Node.js 24 configurados com `HTTP_PROXY`/`HTTPS_PROXY`, ative o proxy do próprio Node ao iniciar o servidor: `NODE_USE_ENV_PROXY=1 npm run dev`. Isso foi validado no ambiente de nuvem, preservando a verificação TLS e o certificado adicional já fornecido pelo ambiente. Na sua máquina, sem proxy, o comando normal `npm run dev` continua válido.
