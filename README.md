@@ -50,6 +50,19 @@ O modo **Player do Drive** permanece disponível como alternativa e depende da p
 
 Rodar localmente não significa funcionar offline: os vídeos que estão no Drive precisam de internet para chegar ao servidor.
 
+## Gravar cenas
+
+Na **Reprodução direta**, os controles de gravação ficam logo abaixo do vídeo. Inicie o filme e clique em **Gravar cena**. A imagem e o áudio do próprio vídeo são capturados, sem pedir câmera, microfone ou compartilhamento de tela.
+
+- **Pausar gravação** interrompe somente a captura; o filme continua. **Continuar gravação** retoma no mesmo trecho, omitindo o intervalo pausado.
+- **Parar e salvar** finaliza o arquivo e inicia o download. A pasta de destino e a exibição da janela de salvar seguem as preferências do navegador.
+- Pausar o vídeo ou aguardar o carregamento também pausa a captura. Ao retomar a reprodução, a captura continua, desde que você não a tenha pausado manualmente.
+- Terminar o vídeo, trocar de filme ou mudar o modo de reprodução finaliza a gravação. Voltar ao catálogo guarda o trecho localmente para baixar ao abrir o player novamente.
+
+Os dados começam a ser guardados em blocos no armazenamento local do navegador durante a captura. A seção **Trechos salvos neste navegador** permite baixar novamente ou excluir a cópia local. Os trechos não são enviados ao servidor e não aparecem em outros navegadores. Se uma gravação for interrompida ao fechar a página, os blocos já gravados podem ser recuperados como trecho parcial; finalize antes de fechar para preservar o final do arquivo. Limpar os dados do site apaga essas cópias, mas não os arquivos já baixados.
+
+Use um navegador com `captureStream` e `MediaRecorder`, como Chrome ou Firefox no computador. O formato é WebM com vídeo VP8 e áudio Opus quando suportado, ou outro formato disponível no navegador. A captura requer espaço local livre e só funciona com o player direto; o iframe do Drive não oferece essa função. Legendas SRT externas, menus e outros elementos da interface não são incorporados à imagem gravada. A duração acompanha o tempo real da captura e a qualidade depende da reprodução e do navegador.
+
 ## Legendas SRT
 
 Na sala de projeção, clique em **Carregar legenda (.srt)** e escolha um arquivo de até 2 MB. A legenda fica vinculada ao vídeo e salva em `.muvies/subtitles/`, disponível também nos outros aparelhos. É possível trocar, mostrar/ocultar ou remover. Mostrar/ocultar altera somente sua reprodução; trocar/remover atualiza o arquivo compartilhado.

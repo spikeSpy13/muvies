@@ -6,6 +6,7 @@ import { driveMediaUrl, drivePreviewUrl, driveViewUrl, getSavedVideos, parseDriv
 import { LibraryError, readLibrary, writeLibrary, type LibrarySnapshot } from './storage';
 import { useSubtitles } from './subtitles';
 import { SubtitleTiming } from './SubtitleTiming';
+import { SceneRecorder } from './SceneRecorder';
 import './styles.css';
 import { Catalog, filmUrl } from './Catalog';
 import { ArtworkFields, useArtworkDraft } from './ArtworkFields';
@@ -392,6 +393,7 @@ function App() {
             {playerError && <div className="player-error"><Info size={24}/><strong>Não foi possível iniciar o vídeo.</strong><p>{playerError}</p><div className="player-error-actions"><button className="button secondary" onClick={retryPlayback}>Tentar novamente</button></div></div>}
           </>}
         </div>
+        {active && libraryReady && <SceneRecorder videoRef={videoRef} videoId={active.id} title={active.title} direct={playbackMode === 'direct'}/>}
       </section>
     </main>
     </>}
