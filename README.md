@@ -1,6 +1,6 @@
-# Muvies · The Metropolis
+# Muvies
 
-Um catálogo de cinema em português com a diagramação editorial The Metropolis: fundo de papel, tipografia clássica, ilustrações, filme em destaque e grade pesquisável. Os filmes são adicionados por links do Google Drive. Ao clicar em uma capa, título ou botão de assistir, o aplicativo abre a sala de projeção e inicia o filme.
+Um catálogo de cinema em português com fundo de papel, tipografia clássica e uma grade pesquisável de vídeos. A página inicial mostra todos os filmes cadastrados, sem banner ou filme em destaque. O menu no topo permite combinar gênero, ano e país com a busca. Os filmes são adicionados por links do Google Drive. Ao clicar em uma capa, título ou botão de assistir, o aplicativo abre a sala de projeção e inicia o filme.
 
 Não é necessário conectar uma conta Google, configurar Client ID ou importar o Drive. Use links públicos que permitam baixar o arquivo original. O catálogo começa vazio, sem filmes de demonstração.
 
@@ -22,17 +22,17 @@ Para atualizar uma instalação existente, pare o servidor, execute `git pull --
 ## Usar o catálogo
 
 1. Clique em **Adicionar vídeo** e cole um link de arquivo do Drive (`https://drive.google.com/file/d/ID/view` ou `https://drive.google.com/open?id=ID`). Links de pastas não são aceitos.
-2. Informe título e gênero. Envie o **Pôster do filme** (vertical) e a **Imagem de destaque** (horizontal), se desejar. Em **Detalhes do filme (opcional)**, adicione direção, ano e sinopse. Você pode criar gêneros digitando seus nomes.
-3. Busque por título, direção ou ano e filtre por gênero. O marcador guarda o filme na **Minha lista**; o lápis permite editar os dados ou remover o link.
+2. Informe título e gênero e, se desejar, **Ano** e **País**. Envie o **Pôster do filme** (vertical) para os cards. Em **Detalhes do filme (opcional)**, adicione direção e sinopse. Você pode criar gêneros digitando seus nomes.
+3. Busque por título, direção, gênero, ano ou país. Os gêneros do menu e as opções de ano e país acompanham os vídeos cadastrados; combine os filtros para refinar a lista e use **Todos** ou **Limpar filtros** para voltar ao acervo completo. O marcador guarda o filme na **Minha lista**; o lápis permite editar os dados ou remover o link.
 4. Clique no filme para abrir o player e iniciar a reprodução. **Voltar ao catálogo** retorna à página inicial. Os botões voltar/avançar do navegador também funcionam.
 
 A URL `?filme=ID` identifica o filme no player e pode ser reaberta ou compartilhada entre aparelhos com acesso ao mesmo servidor. Ao abrir diretamente uma URL ou recarregar a página, o navegador pode exigir outro clique para permitir a reprodução com áudio; o aplicativo oferece tentar novamente.
 
-O catálogo mostra apenas os filmes adicionados por você. Os cards usam o pôster enviado; o destaque usa sua imagem horizontal. Sem uma imagem de destaque, o aplicativo usa o pôster inteiro, sem cortá-lo; sem imagens enviadas, usa as vinhetas de cinema do modelo editorial. Informações como direção, ano e sinopse só aparecem quando preenchidas.
+O catálogo mostra apenas os filmes adicionados por você. Os cards usam o pôster enviado; sem pôster, usam as vinhetas de cinema do modelo editorial. Informações como direção, ano, país e sinopse só aparecem quando preenchidas. Filmes antigos sem país continuam visíveis na lista completa; edite-os para incluir essa informação e encontrá-los no filtro de país.
 
 ### Pôster e imagem de destaque
 
-Os dois campos aparecem no cadastro e na edição, com prévias independentes. Para os cards, a proporção sugerida do pôster é **2:3**. Para o destaque, use uma imagem horizontal em **16:9**. São aceitos JPG, PNG e WebP de até **10 MB** e **40 megapixels** cada. É possível trocar ou remover uma imagem sem alterar a outra.
+Para os cards, a proporção sugerida do pôster é **2:3**. A imagem horizontal de destaque continua armazenada e pode ser editada, mas não aparece na página inicial simplificada. Os dois campos têm prévias independentes. São aceitos JPG, PNG e WebP de até **10 MB** e **40 megapixels** cada. É possível trocar ou remover uma imagem sem alterar a outra.
 
 As imagens só são enviadas quando você salva o filme. O servidor valida o conteúdo, corrige a orientação, remove metadados e gera WebP com até 2400 pixels por dimensão, preservando a proporção. Os arquivos ficam em **`.muvies/images/`**, vinculados pelo catálogo, disponíveis após reiniciar e para os demais aparelhos da rede. A seleção e a prévia não alteram o catálogo antes de salvar. Imagens já enviadas podem ser reaproveitadas em uma nova tentativa de gravação.
 

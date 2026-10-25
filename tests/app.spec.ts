@@ -81,13 +81,14 @@ test('catálogo editorial começa vazio, sem player, demonstrações ou conexão
   const requests: string[] = [];
   page.on('request', request => requests.push(request.url()));
   await page.goto('/');
-  await expect(page.getByRole('heading', { name: 'THE METROPOLIS', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'THE METROPOLIS', exact: true })).toHaveCount(0);
+  await expect(page.locator('.catalog-feature,.masthead')).toHaveCount(0);
   await expect(page.getByRole('heading', { name: 'O seu cinema começa aqui.' })).toBeVisible();
   await expect(page.locator('video,iframe,.catalog-card')).toHaveCount(0);
   await expect(page.getByText('Lista salva no aplicativo', { exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: /Conectar Drive|Sincronizar Drive/ })).toHaveCount(0);
   expect(requests.some(url => /accounts\.google|googleapis\.com|\/api\/drive\/session|\/api\/drive\/media/.test(url))).toBe(false);
-  await expect.poll(() => page.locator('.catalog-welcome>img').evaluate(image => (image as HTMLImageElement).naturalWidth)).toBeGreaterThan(0);
+  await expect(page.getByRole('navigation', { name: 'Filtrar por gênero' })).toBeVisible();
 });
 
 test('links aparecem no catálogo de outro navegador e persistem sem localStorage', async ({ page, browser, library }) => {
@@ -148,6 +149,84 @@ test('edita detalhes e remove o último filme sem ressuscitar conteúdo', async 
   expect(library.videos).toEqual([]);
   await page.reload();
   await expect(page.locator('.catalog-card,video,iframe')).toHaveCount(0);
+});
+
+test('combina gênero, ano, país e busca sem destaque, preservando filtros ao voltar do player', async ({ page, library }) => {
+  library.videos = [
+    { ...video(firstId, 'Nossa viagem', 'Drama'), year: '2024', country: 'Brasil' },
+    { ...video('otherBrazilDrama', 'Outra história', 'Drama'), year: '2023', country: 'Brasil' },
+    { ...video('frenchDrama2024', 'Encontro em Paris', 'Drama'), year: '2024', country: 'França' },
+    { ...video('comedyBrazil2024', 'Domingo de sol', 'Comédia'), year: '2024', country: 'Brasil' },
+    video('legacyVideo12345', 'Filme sem detalhes', 'Arquivo'),
+  ];
+  library.revision = 'existing';
+  await page.goto('/');
+  await expect(page.locator('.catalog-card')).toHaveCount(5);
+  await expect(page.locator('.catalog-feature,.masthead')).toHaveCount(0);
+  await expect(page.getByText('THE METROPOLIS', { exact: true })).toHaveCount(0);
+  const year = page.getByRole('combobox', { name: 'Filtrar por ano', exact: true });
+  const country = page.getByRole('combobox', { name: 'Filtrar por país', exact: true });
+  await expect(year).toHaveValue('');
+  await expect(country).toHaveValue('');
+  await expect(year.locator('option')).toHaveText(['Todos os anos', '2024', '2023']);
+  await expect(country.locator('option')).toHaveText(['Todos os países', 'Brasil', 'França']);
+  await page.getByRole('button', { name: 'Drama', exact: true }).click();
+  await expect(page.locator('.catalog-card')).toHaveCount(3);
+  await year.selectOption('2024');
+  await expect(page.locator('.catalog-card')).toHaveCount(2);
+  await country.selectOption('Brasil');
+  await expect(page.locator('.catalog-card')).toHaveCount(1);
+  await expect(card(page)).toBeVisible();
+  await watch(page);
+  await page.getByRole('button', { name: 'Voltar ao catálogo', exact: true }).click();
+  await expect(year).toHaveValue('2024');
+  await expect(country).toHaveValue('Brasil');
+  await expect(page.getByRole('button', { name: 'Drama', exact: true })).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.locator('.catalog-card')).toHaveCount(1);
+  await page.getByRole('searchbox', { name: 'Buscar no catálogo' }).fill('Paris');
+  await expect(page.getByRole('heading', { name: 'Nenhum filme encontrado', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Limpar filtros', exact: true }).click();
+  await expect(page.locator('.catalog-card')).toHaveCount(5);
+  await expect(year).toHaveValue('');
+  await expect(country).toHaveValue('');
+  await expect(page.getByRole('searchbox', { name: 'Buscar no catálogo' })).toHaveValue('');
+  library.videos.push({ ...video('networkDocumentary', 'Ilha distante', 'Documentário'), year: '2025', country: 'Portugal' });
+  library.revision = 'network-added';
+  await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+  await expect(page.getByRole('button', { name: 'Documentário', exact: true })).toBeVisible();
+  await expect(year.locator('option')).toHaveText(['Todos os anos', '2025', '2024', '2023']);
+  await country.selectOption('Portugal');
+  await expect(card(page, 'Ilha distante')).toBeVisible();
+  await expect(page.locator('.catalog-card')).toHaveCount(1);
+  await page.getByRole('button', { name: 'Todos', exact: true }).click();
+  await expect(page.locator('.catalog-card')).toHaveCount(6);
+});
+
+test('cadastro e edição salvam país e ano e atualizam os filtros após recarregar', async ({ page, library }) => {
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Adicionar vídeo', exact: true }).click();
+  await page.getByLabel('Link do vídeo').fill(`https://drive.google.com/file/d/${firstId}/view`);
+  await page.getByLabel('Título', { exact: true }).fill('Nossa viagem');
+  await page.getByLabel('Gênero', { exact: true }).fill('Viagens');
+  await page.getByLabel('Ano', { exact: true }).fill('2024');
+  await page.getByLabel('País', { exact: true }).fill('Brasil');
+  await page.getByRole('button', { name: 'Adicionar à lista', exact: true }).click();
+  await expect(page.getByRole('dialog')).not.toBeVisible();
+  expect(library.videos[0]).toMatchObject({ year: '2024', country: 'Brasil' });
+  await page.reload();
+  await card(page).getByRole('button', { name: 'Editar Nossa viagem', exact: true }).click();
+  await expect(page.getByLabel('Ano', { exact: true })).toHaveValue('2024');
+  await expect(page.getByLabel('País', { exact: true })).toHaveValue('Brasil');
+  await page.getByLabel('Ano', { exact: true }).fill('2025');
+  await page.getByLabel('País', { exact: true }).fill('Portugal');
+  await page.getByRole('button', { name: 'Salvar alterações', exact: true }).click();
+  await expect(page.getByRole('dialog')).not.toBeVisible();
+  expect(library.videos[0]).toMatchObject({ year: '2025', country: 'Portugal' });
+  await page.reload();
+  await page.getByRole('combobox', { name: 'Filtrar por ano', exact: true }).selectOption('2025');
+  await page.getByRole('combobox', { name: 'Filtrar por país', exact: true }).selectOption('Portugal');
+  await expect(card(page)).toBeVisible();
+  await expect(page.getByRole('combobox', { name: 'Filtrar por país', exact: true }).locator('option')).toHaveText(['Todos os países', 'Portugal']);
 });
 
 test('rejeita links inválidos, evita duplicatas e preserva resourcekey ao abrir o player', async ({ page, library }) => {
@@ -369,16 +448,20 @@ test('cadastro envia pôster e imagem de destaque distintos e compartilha ambos 
   expect(poster).toMatch(/^\/api\/images\/[a-f0-9]{64}\.webp$/);
   expect(cover).not.toBe(poster);
   await expect(card(page).getByAltText('Pôster: Nossa viagem')).toHaveAttribute('src', poster!);
-  await expect(page.locator('.feature-art img')).toHaveAttribute('src', cover!);
+  await expect(page.locator('.catalog-feature')).toHaveCount(0);
   const dimensions = await card(page).locator('.card-art').boundingBox();
   expect(dimensions!.height / dimensions!.width).toBeCloseTo(1.5, 1);
   await page.reload();
-  await expect(page.locator('.feature-art img')).toHaveAttribute('src', cover!);
+  await card(page).getByRole('button', { name: 'Editar Nossa viagem', exact: true }).click();
+  await expect(page.getByAltText('Prévia: imagem de destaque')).toHaveAttribute('src', cover!);
+  await page.getByRole('button', { name: 'Fechar', exact: true }).click();
   const second = await browser.newContext();
   await libraryRoutes(second, library); await imageRoutes(second, images);
   const another = await second.newPage(); await another.goto(page.url());
   await expect(card(another).getByAltText('Pôster: Nossa viagem')).toHaveAttribute('src', poster!);
-  await expect.poll(() => another.locator('.feature-art img').evaluate(img => (img as HTMLImageElement).naturalWidth)).toBe(320);
+  await card(another).getByRole('button', { name: 'Editar Nossa viagem', exact: true }).click();
+  await expect(another.getByAltText('Prévia: imagem de destaque')).toHaveAttribute('src', cover!);
+  await expect.poll(() => another.getByAltText('Prévia: imagem de destaque').evaluate(img => (img as HTMLImageElement).naturalWidth)).toBe(320);
   await second.close();
 });
 
@@ -408,7 +491,7 @@ test('edição preserva prévia e imagem anterior se a gravação falhar; permit
   await page.getByRole('button', { name: 'Salvar alterações', exact: true }).click();
   await expect(page.getByRole('dialog')).not.toBeVisible();
   expect(library.videos[0].poster).toBe(poster); expect(library.videos[0].cover).toBeUndefined();
-  await expect(page.locator('.feature-art img')).toHaveAttribute('src', poster!);
+  await expect(page.locator('.catalog-feature')).toHaveCount(0);
   await expect(card(page, 'Novo título').getByAltText('Pôster: Novo título')).toHaveAttribute('src', poster!);
 });
 

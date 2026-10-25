@@ -12,6 +12,7 @@ export type Video = {
   duration?: string;
   director?: string;
   year?: string;
+  country?: string;
   favorite?: boolean;
 };
 

@@ -96,6 +96,24 @@ test('detalhes editoriais e Minha lista persistem e mantêm compatibilidade com 
   assert.deepEqual(cleared.videos, [video]);
 });
 
+test('país é normalizado, persiste após reiniciar e rejeita valores inválidos sem perder dados', async t => {
+  const context = await fixture(t);
+  const response = await save(context, [{ ...video, country: '  Brasil  ' }]);
+  assert.equal(response.status, 200);
+  const saved = await response.json();
+  assert.deepEqual(saved.videos, [{ ...video, country: 'Brasil' }]);
+  const restarted = await fixture(t, context.directory);
+  assert.deepEqual(await (await fetch(restarted.endpoint)).json(), saved);
+  for (const country of ['', '   ', '\nBrasil', 'x'.repeat(129), 123, null]) {
+    const invalid = await save(restarted, [{ ...video, country }], saved.revision);
+    assert.equal(invalid.status, 400);
+    assert.deepEqual(await (await fetch(restarted.endpoint)).json(), saved);
+  }
+  const cleared = await save(restarted, [video], saved.revision);
+  assert.equal(cleared.status, 200);
+  assert.deepEqual((await cleared.json()).videos, [video]);
+});
+
 test('revisão antiga ou ausente não sobrescreve os links já salvos', async t => {
   const context = await fixture(t);
   const initial = await (await save(context, [video])).json();

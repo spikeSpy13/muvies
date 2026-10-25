@@ -37,6 +37,7 @@ function normalizeVideos(value) {
     if (video.duration !== undefined && !text(video.duration, 64)) throw invalid();
     if (video.director !== undefined && !text(video.director, 200)) throw invalid();
     if (video.year !== undefined && (typeof video.year !== 'string' || !/^\d{4}$/.test(video.year))) throw invalid();
+    if (video.country !== undefined && !text(video.country, 128)) throw invalid();
     if (video.description !== undefined && (typeof video.description !== 'string' || !video.description.trim() || video.description.length > 3000 || /[\u0000-\u0008\u000b\u000c\u000e-\u001f]/.test(video.description))) throw invalid();
     if (video.favorite !== undefined && typeof video.favorite !== 'boolean') throw invalid();
     for (const field of ['poster', 'cover']) {
@@ -57,6 +58,7 @@ function normalizeVideos(value) {
       ...(video.duration ? { duration: video.duration } : {}),
       ...(video.director ? { director: video.director.trim() } : {}),
       ...(video.year ? { year: video.year } : {}),
+      ...(video.country ? { country: video.country.trim() } : {}),
       ...(video.description ? { description: video.description.trim() } : {}),
       ...(video.favorite ? { favorite: true } : {}),
       ...(video.poster ? { poster: video.poster } : {}),
