@@ -56,6 +56,8 @@ Na sala de projeção, clique em **Carregar legenda (.srt)** e escolha um arquiv
 
 As legendas externas funcionam na **Reprodução direta**. Ao carregar SRT no modo **Player do Drive**, o aplicativo muda para a reprodução direta, pois o iframe do Google não aceita uma faixa externa enviada pelo Muvies.
 
+Para sincronizar a legenda com o áudio, abra **Ajustar legenda** no player. Use **Adiantar 0,5 s**, **Atrasar 0,5 s** ou digite o deslocamento em segundos (até 600 segundos em cada sentido). Valores negativos mostram o texto antes; positivos, depois. **Zerar ajuste** restaura os horários originais, sem reiniciar o vídeo. O ajuste fica salvo neste navegador para cada vídeo e versão da legenda; não altera o SRT compartilhado. Funciona na reprodução direta com as legendas ativadas.
+
 O servidor valida os tempos e converte SRT para WebVTT, preservando acentos e quebras de linha. São aceitos UTF-8, Windows-1252 e UTF-16 com BOM. Marcações de formatação são exibidas como texto. Trocar uma legenda não reinicia o vídeo e não altera seus codecs.
 
 ## Arquivos salvos e rede local

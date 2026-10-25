@@ -5,6 +5,7 @@ import { ArrowLeft, Captions, Check, ChevronDown, CircleHelp, ExternalLink, Film
 import { driveMediaUrl, drivePreviewUrl, driveViewUrl, getSavedVideos, parseDriveId, playbackErrors, saveVideos, type Video } from './library';
 import { LibraryError, readLibrary, writeLibrary, type LibrarySnapshot } from './storage';
 import { useSubtitles } from './subtitles';
+import { SubtitleTiming } from './SubtitleTiming';
 import './styles.css';
 import { Catalog, filmUrl } from './Catalog';
 import { ArtworkFields, useArtworkDraft } from './ArtworkFields';
@@ -377,6 +378,7 @@ function App() {
           <input ref={subtitleInputRef} type="file" accept=".srt,application/x-subrip" aria-label="Arquivo de legenda SRT" className="visually-hidden" tabIndex={-1} onChange={uploadSubtitle}/>
           <button className="subtitle-upload" onClick={() => subtitleInputRef.current?.click()} disabled={!subtitles.ready || subtitles.busy}>{subtitles.busy ? <LoaderCircle size={15} className="spin"/> : <Upload size={15}/>} {subtitles.busy ? 'Salvando legenda…' : subtitles.subtitle ? 'Trocar legenda (.srt)' : 'Carregar legenda (.srt)'}</button>
           {subtitles.subtitle && <><span className="subtitle-filename" title={subtitles.subtitle.filename}>{subtitles.subtitle.filename}</span><button className="subtitle-toggle" aria-pressed={subtitles.enabled && playbackMode === 'direct'} onClick={subtitles.toggle} disabled={playbackMode !== 'direct' || subtitles.busy}><Captions size={17}/>{subtitles.enabled ? 'Ocultar legendas' : 'Mostrar legendas'}</button><button className="subtitle-remove" aria-label="Remover legenda" onClick={removeSubtitle} disabled={subtitles.busy}><Trash2 size={14}/></button></>}
+          {subtitles.subtitle && active.driveId && <SubtitleTiming key={`${active.driveId}:${subtitles.subtitle.revision}`} trackRef={trackRef} videoId={active.driveId} revision={subtitles.subtitle.revision} disabled={playbackMode !== 'direct' || subtitles.busy || !subtitles.enabled}/>}
           {playbackMode === 'drive' && <span className="subtitle-hint">SRT usa a reprodução direta.</span>}
           {subtitles.problem && <p className="subtitle-problem" role="alert"><Info size={14}/>{subtitles.problem}</p>}
         </div>}
